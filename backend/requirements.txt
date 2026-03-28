@@ -1,0 +1,14 @@
+fastapi
+uvicorn
+python-multipart
+numpy
+opencv-python-headless
+scikit-image
+ncempy
+matplotlib
+pandas
+pytesseract
+Pillow
+stardist
+tensorflow
+openpyxl

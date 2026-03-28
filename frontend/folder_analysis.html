@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Folder Analysis</title>
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" href="/static/assets/loading_screen.png">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            background-color: #f8f9fa;
+            margin: 0;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        h1,
+        h2 {
+            text-align: center;
+            color: #333;
+        }
+
+        .stats-grid {
+            display: grid;
+            /* Adaptive columns for 5 items */
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background: #f1f3f5;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .stat-val {
+            font-size: 24px;
+            font-weight: bold;
+            color: #007bff;
+        }
+
+        .stat-label {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .charts-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .chart-wrapper {
+            height: 300px;
+            border: 1px solid #eee;
+            padding: 10px;
+            border-radius: 8px;
+            background: white;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+
+        th,
+        td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: center;
+            font-size: 14px;
+        }
+
+        th {
+            background-color: #f2f2f2;
+            position: sticky;
+            top: 0;
+        }
+
+        .ledger-container {
+            max-height: 500px;
+            overflow-y: auto;
+            border: 1px solid #eee;
+        }
+
+        .btn {
+            display: inline-flex;
+            justify-content: center;
+            align-items: center;
+            padding: 12px;
+            background-color: #007bff;
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+            border: none;
+            cursor: pointer;
+            font-size: 14px;
+            line-height: normal;
+        }
+
+        .btn:hover {
+            background-color: #0056b3;
+        }
+
+        .back-link {
+            display: block;
+            margin-bottom: 20px;
+            color: #666;
+            text-decoration: none;
+            font-size: 16px;
+        }
+
+        .back-link:hover {
+            color: #333;
+        }
+
+        /* --- INFO MODAL --- */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        .modal-content {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            max-width: 600px;
+            width: 90%;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+            position: relative;
+        }
+
+        .modal-close {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            border: none;
+            background: none;
+            font-size: 24px;
+            cursor: pointer;
+            color: #888;
+        }
+
+        .modal-section {
+            margin-bottom: 20px;
+        }
+
+        .modal-section h3 {
+            text-align: left;
+            margin-top: 0;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 10px;
+        }
+
+        .modal-body {
+            font-size: 14px;
+            line-height: 1.6;
+            color: #333;
+            text-align: left;
+        }
+
+        .modal-body ul {
+            margin: 10px 0;
+            padding-left: 20px;
+        }
+
+        .modal-body li {
+            margin-bottom: 8px;
+        }
+    </style>
+</head>
+
+<body>
+    <!-- Header -->
+    <div class="app-header"
+        style="display: flex; align-items: center; justify-content: space-between; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 20px; max-width: 1200px; margin: 0 auto 20px auto;">
+        <div style="display: flex; align-items: center; gap: 30px;">
+            <img src="/static/assets/headers/header_default.png" alt="Logo"
+                style="width: 270px; height: auto; border-radius: 8px; object-fit: contain;" id="appHeaderImage">
+            <div>
+                <h1 style="margin: 0; font-size: 32px; color: #333; text-align: left;">Nanorod Detector 2.0</h1>
+                <p style="margin: 5px 0 0; color: #666; font-size: 16px;">Detects, sizes, and analyzes gold nanorods.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const HEADER_IMAGES = [
+            'header_1.png', 'header_2.png', 'header_3.png', 'header_4.png',
+            'header_5.png', 'header_6.png', 'header_7.png', 'header_8.png',
+            'header_9.png', 'header_default.png'
+        ];
+
+        function randomizeHeader() {
+            const imgElement = document.getElementById('appHeaderImage');
+            if (!imgElement) return;
+
+            if (!sessionStorage.getItem('app_booted')) {
+                sessionStorage.setItem('app_booted', 'true');
+                imgElement.src = '/static/assets/headers/header_default.png';
+            } else {
+                const randomImage = HEADER_IMAGES[Math.floor(Math.random() * HEADER_IMAGES.length)];
+                imgElement.src = '/static/assets/headers/' + randomImage;
+            }
+        }
+        randomizeHeader();
+    </script>
+
+    <div class="container">
+        <div class="container">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <a id="backLink" href="/" class="back-link" style="margin-bottom: 0;">← Back to Dashboard</a>
+                <button onclick="openInstructions()"
+                    style="background: none; border: 1px solid #007bff; color: #007bff; padding: 5px 15px; border-radius: 4px; cursor: pointer;">Instructions</button>
+            </div>
+
+            <h1 id="folderTitle">Folder Analysis</h1>
+
+            <!-- Buttons Container -->
+            <div style="display: flex; justify-content: center; gap: 20px; margin-bottom: 30px;">
+                <a id="downloadAggExcel" href="#" class="btn" style="width: 260px;">Download Excel Report</a>
+                <button onclick="downloadPDF()" class="btn" style="width: 260px; background-color: #6c757d;">Download
+                    PDF
+                    Report</button>
+            </div>
+
+            <!-- Instructions Modal -->
+            <div id="instrModal" class="modal-overlay" onclick="closeInstructions(event)">
+                <div class="modal-content" onclick="event.stopPropagation()">
+                    <button class="modal-close" onclick="closeInstructions(event)">×</button>
+                    <div class="modal-section">
+                        <h3>Folder Analysis Guide</h3>
+                        <div class="modal-body">
+                            <p>This dashboard presents <strong>Acquired Data</strong> from the specific images you have
+                                analyzed and saved, merged into a single dataset.</p>
+                            <p><strong>Key Features:</strong></p>
+                            <ul>
+                                <li><strong>Batch Statistics:</strong> Calculates Mean Length, Width, and Aspect
+                                    Ratio across <em>only</em> the images you processed and saved (not the entire
+                                    folder).</li>
+                                <li><strong>Histograms:</strong> Visualizes the distribution of particle dimensions for
+                                    this merged dataset.</li>
+                                <li><strong>Reports:</strong> You can download the complete dataset as an <strong>Excel
+                                        Report</strong> or a formatted <strong>PDF Report</strong>.</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="loading" style="text-align: center;">Loading aggregate data...</div>
+
+            <div id="content" style="display: none;">
+                <!-- Printable Section -->
+                <div id="report-content" style="padding: 20px; background: white;">
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-val" id="fileCount">-</div>
+                            <div class="stat-label">Images Analyzed</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-val" id="totalParticles">-</div>
+                            <div class="stat-label">Total Particles</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-val" id="meanLen">-</div>
+                            <div class="stat-label">Mean Length</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-val" id="meanWidth">-</div>
+                            <div class="stat-label">Mean Width</div>
+                        </div>
+                        <!-- New Aspect Ratio Card -->
+                        <div class="stat-card">
+                            <div class="stat-val" id="meanAR">-</div>
+                            <div class="stat-label">Mean Aspect Ratio</div>
+                        </div>
+                    </div>
+
+                    <div class="charts-container">
+                        <div class="chart-wrapper"><canvas id="lengthChart"></canvas></div>
+                        <div class="chart-wrapper"><canvas id="widthChart"></canvas></div>
+                    </div>
+                </div>
+
+                <h2>Batch Ledger</h2>
+                <div class="ledger-container">
+                    <table id="dataTable">
+                        <thead>
+                            <tr>
+                                <th>Source Image</th>
+                                <th>ID</th>
+                                <th>L (nm)</th>
+                                <th>W (nm)</th>
+                                <th>AR</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <script>
+            const urlParams = new URLSearchParams(window.location.search);
+            const folderName = urlParams.get('folder');
+
+            if (!folderName) {
+                alert("No folder specified");
+                window.location.href = "/";
+            }
+
+            document.getElementById('folderTitle').textContent = `Analysis: ${folderName}`;
+            document.getElementById('backLink').href = `/?folder=${encodeURIComponent(folderName)}`;
+            document.getElementById('backLink').innerText = `← Back to ${folderName}`;
+
+            const dlBtn = document.getElementById('downloadAggExcel');
+            dlBtn.href = `/folders/${encodeURIComponent(folderName)}/export_aggregate`;
+
+            let lengthChart, widthChart;
+
+            async function loadAggregateData() {
+                try {
+                    const response = await fetch(`/folders/${encodeURIComponent(folderName)}/aggregate`);
+                    const data = await response.json();
+
+                    if (data.file_count === 0) {
+                        document.getElementById('loading').textContent = "No saved analysis data found in this folder.";
+                        return;
+                    }
+
+                    displayData(data);
+                } catch (e) {
+                    console.error(e);
+                    alert("Error loading aggregate data");
+                }
+            }
+
+            function displayData(data) {
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('content').style.display = 'block';
+
+                // Stats
+                document.getElementById('fileCount').textContent = data.file_count;
+                document.getElementById('totalParticles').textContent = data.stats.count || 0;
+                document.getElementById('meanLen').textContent = data.stats.mean_length || "-";
+                document.getElementById('meanWidth').textContent = data.stats.mean_width || "-";
+                document.getElementById('meanAR').textContent = data.stats.mean_ar || "-";
+
+                // Charts
+                const items = data.data;
+                const lengths = items.map(d => d.length_nm);
+                const widths = items.map(d => d.width_nm);
+
+                lengthChart = createHistogram('lengthChart', 'Length Distribution', lengths);
+                widthChart = createHistogram('widthChart', 'Width Distribution', widths);
+
+                // Table
+                const tbody = document.querySelector('#dataTable tbody');
+                tbody.innerHTML = '';
+                items.forEach(item => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                    <td>${item.source_image}</td>
+                    <td>${item.id}</td>
+                    <td>${item.length_nm.toFixed(1)}</td>
+                    <td>${item.width_nm.toFixed(1)}</td>
+                    <td>${item.aspect_ratio.toFixed(1)}</td>
+                `;
+                    tbody.appendChild(tr);
+                });
+            }
+
+            function createHistogram(canvasId, label, data) {
+                const ctx = document.getElementById(canvasId).getContext('2d');
+                if (!data.length) return;
+
+                const binCount = 20;
+                const min = Math.floor(Math.min(...data));
+                const max = Math.ceil(Math.max(...data));
+                let step = (max - min) / binCount;
+                if (step === 0) step = 1;
+
+                const bins = new Array(binCount).fill(0);
+                const labels = [];
+                for (let i = 0; i < binCount; i++) {
+                    const val = min + i * step + step / 2;
+                    labels.push(Math.round(val));
+                }
+
+                data.forEach(v => {
+                    let idx = Math.floor((v - min) / step);
+                    if (idx >= binCount) idx = binCount - 1;
+                    bins[idx]++;
+                });
+
+                return new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: label,
+                            data: bins,
+                            backgroundColor: 'rgba(54, 162, 235, 0.6)'
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: { y: { beginAtZero: true } },
+                        animation: false,
+                        layout: { padding: { right: 20 } }
+                    }
+                });
+            }
+
+            function downloadPDF() {
+                const element = document.getElementById('report-content');
+
+                const pdfContainer = document.createElement('div');
+                // Strict width for Squeeze to Single Page
+                pdfContainer.style.width = '900px';
+                pdfContainer.style.background = 'white';
+                pdfContainer.style.padding = '20px';
+
+                // Add Title (Compact)
+                const title = document.getElementById('folderTitle').cloneNode(true);
+                title.style.marginBottom = '10px';
+                title.style.marginTop = '0';
+                title.style.textAlign = 'center';
+                title.style.fontSize = '24px';
+                pdfContainer.appendChild(title);
+
+                // Clone content
+                const clonedContent = element.cloneNode(true);
+
+                // -- SCALE ADJUSTMENTS FOR PDF --
+
+                // Force 5-column layout for stats
+                const statsGrid = clonedContent.querySelector('.stats-grid');
+                if (statsGrid) {
+                    statsGrid.style.gridTemplateColumns = 'repeat(5, 1fr)';
+                    statsGrid.style.gap = '10px';
+                    statsGrid.style.marginBottom = '20px';
+                }
+
+                // Compact Stat Cards
+                const cards = clonedContent.querySelectorAll('.stat-card');
+                cards.forEach(card => {
+                    card.style.padding = '10px';
+                });
+                const vals = clonedContent.querySelectorAll('.stat-val');
+                vals.forEach(val => val.style.fontSize = '18px');
+                const labels = clonedContent.querySelectorAll('.stat-label');
+                labels.forEach(lbl => lbl.style.fontSize = '12px');
+
+                // Compact Charts - FORCE HEIGHT
+                const chartWrappers = clonedContent.querySelectorAll('.chart-wrapper');
+                chartWrappers.forEach(wrapper => {
+                    wrapper.style.height = '220px'; // Forced shorter height
+                    wrapper.style.padding = '5px';
+                });
+
+                const chartsContainer = clonedContent.querySelector('.charts-container');
+                if (chartsContainer) {
+                    chartsContainer.style.gap = '15px';
+                }
+
+                // Replace Canvases with Images (PDF Fix)
+                const originalCanvases = element.querySelectorAll('canvas');
+                const clonedCanvases = clonedContent.querySelectorAll('canvas');
+
+                originalCanvases.forEach((origCanvas, index) => {
+                    if (!clonedCanvases[index]) return;
+                    try {
+                        const imgData = origCanvas.toDataURL('image/png');
+                        const img = document.createElement('img');
+                        img.src = imgData;
+                        img.style.width = '100%';
+                        img.style.height = '100%'; // Match wrapper height
+                        img.style.objectFit = 'contain';
+                        img.style.display = 'block';
+
+                        const clonedCanvas = clonedCanvases[index];
+                        clonedCanvas.parentNode.replaceChild(img, clonedCanvas);
+                    } catch (e) {
+                        console.error("Error capturing chart for PDF:", e);
+                    }
+                });
+
+                pdfContainer.appendChild(clonedContent);
+
+                const opt = {
+                    margin: [0.3, 0.3], // Tight margins
+                    filename: `${folderName}_report.pdf`,
+                    image: { type: 'jpeg', quality: 0.98 },
+                    html2canvas: { scale: 2, useCORS: true, logging: false },
+                    jsPDF: { unit: 'in', format: 'letter', orientation: 'landscape' }
+                };
+
+                html2pdf().set(opt).from(pdfContainer).save();
+            }
+
+            // --- Instructions Modal ---
+            function openInstructions() {
+                document.getElementById('instrModal').style.display = 'flex';
+            }
+
+            function closeInstructions(event) {
+                if (event) event.stopPropagation();
+                document.getElementById('instrModal').style.display = 'none';
+            }
+
+            loadAggregateData();
+        </script>
+</body>
+
+</html>

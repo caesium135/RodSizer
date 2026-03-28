@@ -1,0 +1,761 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nanorod Detector 2.0</title>
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" href="/static/assets/loading_screen.png">
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+
+        /* --- Header --- */
+        .app-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            /* Space out logo and info */
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+            margin-bottom: 30px;
+            gap: 30px;
+        }
+
+        .header-logo {
+            width: 270px;
+            /* Quarter of original 800px */
+            height: auto;
+            border-radius: 8px;
+            object-fit: contain;
+        }
+
+        .header-title h1 {
+            margin: 0;
+            font-size: 32px;
+            color: #333;
+        }
+
+        .header-title p {
+            margin: 5px 0 0;
+            color: #666;
+            font-size: 16px;
+        }
+
+        .about-btn {
+            background: #f8f9fa;
+            border: 1px solid #ddd;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            color: #666;
+            font-size: 20px;
+            transition: all 0.2s;
+        }
+
+        .about-btn:hover {
+            background: #e9ecef;
+            color: #333;
+        }
+
+        /* --- INFO MODAL --- */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        .modal-content {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            max-width: 500px;
+            width: 90%;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+            position: relative;
+        }
+
+        .modal-close {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            border: none;
+            background: none;
+            font-size: 24px;
+            cursor: pointer;
+            color: #888;
+        }
+
+        .modal-section {
+            margin-bottom: 20px;
+        }
+
+        .modal-section h3 {
+            margin-top: 0;
+            color: #333;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 10px;
+        }
+
+        .modal-credits {
+            background: #f1f8ff;
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid #cce5ff;
+            font-size: 14px;
+            line-height: 1.5;
+            color: #0c5460;
+        }
+
+        /* --- Main Content --- */
+        .main-container {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+            min-height: 500px;
+        }
+
+        /* --- Ledger Table (Folders) --- */
+        .ledger-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .ledger-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+
+        .ledger-table th,
+        .ledger-table td {
+            padding: 15px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+
+        .ledger-table th {
+            background-color: #f9f9f9;
+            font-weight: 600;
+            color: #555;
+        }
+
+        .ledger-table tr:hover {
+            background-color: #f1f5f9;
+        }
+
+        .folder-link {
+            color: #007bff;
+            text-decoration: none;
+            font-weight: bold;
+            cursor: pointer;
+            font-size: 16px;
+        }
+
+        .folder-link:hover {
+            text-decoration: underline;
+        }
+
+        /* --- Buttons --- */
+        .btn {
+            background-color: #007bff;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: background 0.2s;
+        }
+
+        .btn:hover {
+            background-color: #0056b3;
+        }
+
+        .btn-danger {
+            background-color: #dc3545;
+        }
+
+        .btn-danger:hover {
+            background-color: #a71d2a;
+        }
+
+        .btn-outline {
+            background-color: transparent;
+            border: 1px solid #007bff;
+            color: #007bff;
+        }
+
+        .btn-outline:hover {
+            background-color: #edf5ff;
+        }
+
+        /* --- Folder View (Detail) --- */
+        .folder-view-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .back-btn {
+            margin-right: 15px;
+            color: #666;
+            text-decoration: none;
+            font-size: 18px;
+            cursor: pointer;
+        }
+
+        .upload-section {
+            background: #f8f9fa;
+            border: 2px dashed #dee2e6;
+            border-radius: 8px;
+            padding: 40px;
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        /* --- Gallery --- */
+        .gallery {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 25px;
+        }
+
+        .image-card {
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+            transition: transform 0.2s;
+            position: relative;
+            border: 1px solid #eee;
+        }
+
+        .image-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+        }
+
+        .image-card img {
+            width: 100%;
+            height: 200px;
+            object-fit: cover;
+            display: block;
+        }
+
+        .image-info {
+            padding: 12px;
+            border-top: 1px solid #eee;
+        }
+
+        .delete-btn {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(220, 53, 69, 0.9);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 28px;
+            height: 28px;
+            font-size: 18px;
+            /* Corrected font size */
+            line-height: 1;
+            cursor: pointer;
+            display: flex;
+            /* Flex to center the 'x' */
+            align-items: center;
+            justify-content: center;
+            padding-bottom: 3px;
+            /* visual tweak */
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+
+        .image-card:hover .delete-btn {
+            opacity: 1;
+        }
+
+        /* Overlay */
+        .processing-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 200px;
+            background: rgba(255, 255, 255, 0.85);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: #333;
+            font-weight: 600;
+        }
+
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #007bff;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+            margin-bottom: 8px;
+        }
+
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
+    <script>
+        const HEADER_IMAGES = [
+            'header_1.png', 'header_2.png', 'header_3.png', 'header_4.png',
+            'header_5.png', 'header_6.png', 'header_7.png', 'header_8.png',
+            'header_9.png', 'header_default.png'
+        ];
+
+        function randomizeHeader() {
+            const imgElement = document.getElementById('appHeaderImage');
+            if (!imgElement) return;
+
+            // Check boot state
+            if (!sessionStorage.getItem('app_booted')) {
+                sessionStorage.setItem('app_booted', 'true');
+                // Ensure default is shown (it is default in HTML, so do nothing or force it)
+                imgElement.src = '/static/assets/headers/header_default.png';
+            } else {
+                // Randomize
+                const randomImage = HEADER_IMAGES[Math.floor(Math.random() * HEADER_IMAGES.length)];
+                imgElement.src = '/static/assets/headers/' + randomImage;
+            }
+        }
+    </script>
+</head>
+
+<body>
+
+    <!-- Header -->
+    <div class="app-header">
+        <div style="display: flex; align-items: center; gap: 30px;">
+            <img src="/static/assets/headers/header_default.png" alt="Logo" class="header-logo" id="appHeaderImage">
+            <div class="header-title">
+                <h1>Nanorod Detector 2.0</h1>
+                <p>Detects, sizes, and analyzes gold nanorods.</p>
+            </div>
+        </div>
+
+        <!-- About Button -->
+        <button class="about-btn" onclick="openModal()" title="About & Credits">ℹ</button>
+    </div>
+
+    <!-- Info Modal -->
+    <div id="infoModal" class="modal-overlay" onclick="closeModal(event)">
+        <div class="modal-content" onclick="event.stopPropagation()">
+            <button class="modal-close" onclick="closeModal(event)">×</button>
+
+            <div class="modal-section">
+                <h3>About This App</h3>
+                <p>This application automates the detection and analysis of gold nanorods from TEM images.</p>
+                <p><strong>Methodology:</strong> Based on <em>JACS Au 2021, 1, 316−327</em>.</p>
+                <p><strong>Technique:</strong> It utilizes <em>K-means clustering</em> for segmentation and fits
+                    particles using <em>Rotated Bounding Boxes</em> to extract precise Length and Width measurements.
+                </p>
+            </div>
+
+            <div class="modal-credits">
+                <strong>Development & Enhancements</strong><br><br>
+                Improved by <strong>Arda</strong> & <strong>Antigravity</strong>, turning the original academic method
+                into a fully functional web application. Key enhancements include:
+                <ul>
+                    <li>Interactive Dashboard & Folder System</li>
+                    <li>Automated Graphs & Histograms</li>
+                    <li>Precise Data Export & Reports</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Container -->
+    <div class="main-container">
+
+        <!-- View 1: Folder Ledger -->
+        <div id="folderLedgerView">
+            <div class="ledger-header">
+                <h2>Folders</h2>
+                <button class="btn" onclick="createFolder()">+ Create New Folder</button>
+            </div>
+
+            <table class="ledger-table">
+                <thead>
+                    <tr>
+                        <th style="width: 70%;">Folder Name</th>
+                        <th style="width: 30%; text-align: right;">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="folderTableBody">
+                    <!-- Populated by JS -->
+                </tbody>
+            </table>
+            <div id="emptyState" style="text-align: center; padding: 40px; color: #888; display: none;">
+                No folders yet. Create one to get started!
+            </div>
+        </div>
+
+        <!-- View 2: Folder Detail -->
+        <div id="folderDetailView" style="display: none;">
+            <div class="folder-view-header">
+                <div>
+                    <span onclick="deselectFolder()" class="back-btn">← Back</span>
+                    <h2 id="currentFolderTitle" style="display: inline-block;">Folder Name</h2>
+                </div>
+                <div style="gap: 10px; display: flex;">
+                    <button class="btn btn-outline" style="padding: 10px 15px;"
+                        onclick="openUploadHelp()">Instructions</button>
+                    <button class="btn" onclick="viewFolderAnalysis()">View Analysis</button>
+                    <button class="btn btn-danger" onclick="deleteCurrentFolder()">Delete Folder</button>
+                </div>
+            </div>
+
+            <div class="upload-section">
+                <h3>Upload Images</h3>
+
+                <p style="color: red; margin-bottom: 20px; font-weight: bold;">
+                    Both .tiff image and .dm3 file with <u style="text-decoration-thickness: 2px;">the same name</u>
+                    required for analysis
+                </p>
+                <button class="btn btn-outline" onclick="document.getElementById('fileInput').click()">Choose
+                    Files</button>
+                <input type="file" id="fileInput" multiple accept=".tif,.tiff,.jpg,.png,.dm3,.dm4"
+                    style="display: none;" onchange="handleUpload(this.files)">
+            </div>
+
+            <!-- Upload Help Modal -->
+            <div id="uploadHelpModal" class="modal-overlay" onclick="closeUploadHelp(event)">
+                <div class="modal-content" onclick="event.stopPropagation()">
+                    <button class="modal-close" onclick="closeUploadHelp(event)">×</button>
+                    <div class="modal-section">
+                        <h3>Upload Instructions</h3>
+                        <p>You can identify and upload <strong>multiple images</strong> at once.</p>
+                        <p>However, to ensure accurate pixel-to-nanometer scaling, the system requires:</p>
+                        <ul>
+                            <li>The raw image file (e.g., <code>image_01.tif</code>)</li>
+                            <li>The metadata file (e.g., <code>image_01.dm3</code>)</li>
+                        </ul>
+                        <p><strong>Crucial:</strong> These files must share <u>exactly the same filename</u> (ignoring
+                            the extension).</p>
+
+                        <div
+                            style="background-color: #fff3cd; color: #856404; padding: 10px; border-radius: 5px; margin-top: 15px; border: 1px solid #ffeeba;">
+                            <strong>Note:</strong> Please open and review each image individually to verify detection
+                            before viewing the <em>Folder Analysis</em>.
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="gallery" id="gallery">
+                <!-- Images go here -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentFolder = null;
+        let pollInterval = null;
+
+        // Init
+        window.addEventListener('DOMContentLoaded', async () => {
+            randomizeHeader();
+            await loadFolders();
+
+            const urlParams = new URLSearchParams(window.location.search);
+            const folderParam = urlParams.get('folder');
+            if (folderParam) {
+                selectFolder(folderParam);
+            }
+        });
+
+        async function createFolder() {
+            const name = prompt("Enter folder name:");
+            if (!name) return;
+
+            const formData = new FormData();
+            formData.append('folder_name', name);
+
+            try {
+                const response = await fetch('/folders', { method: 'POST', body: formData });
+                if (response.ok) {
+                    loadFolders();
+                } else {
+                    const err = await response.json();
+                    alert("Error: " + err.detail);
+                }
+            } catch (e) {
+                console.error(e);
+                alert("Failed to create folder");
+            }
+        }
+
+        async function loadFolders() {
+            try {
+                const response = await fetch('/folders');
+                const folders = await response.json();
+                const tbody = document.getElementById('folderTableBody');
+                tbody.innerHTML = '';
+
+                if (folders.length === 0) {
+                    document.getElementById('emptyState').style.display = 'block';
+                    return;
+                } else {
+                    document.getElementById('emptyState').style.display = 'none';
+                }
+
+                folders.forEach(folder => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td>
+                            <a class="folder-link" onclick="selectFolder('${folder}')">📁 ${folder}</a>
+                        </td>
+                        <td style="text-align: right;">
+                            <button class="btn btn-danger" style="padding: 5px 10px; font-size: 12px;" onclick="deleteFolderByName('${folder}')">Delete</button>
+                        </td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            } catch (e) {
+                console.error("Error loading folders", e);
+            }
+        }
+
+        // --- Folder Selection Logic ---
+
+        function selectFolder(folderName) {
+            currentFolder = folderName;
+            document.getElementById('currentFolderTitle').textContent = folderName;
+
+            // URL Update
+            const url = new URL(window.location);
+            url.searchParams.set('folder', folderName);
+            window.history.pushState({}, '', url);
+
+            // Toggle Views
+            document.getElementById('folderLedgerView').style.display = 'none';
+            document.getElementById('folderDetailView').style.display = 'block';
+
+            randomizeHeader(); // Randomize on folder open
+            loadImages();
+        }
+
+        function deselectFolder() {
+            currentFolder = null;
+
+            // URL Update
+            const url = new URL(window.location);
+            url.searchParams.delete('folder');
+            window.history.pushState({}, '', url);
+
+            // Toggle Views
+            document.getElementById('folderDetailView').style.display = 'none';
+            document.getElementById('folderLedgerView').style.display = 'block';
+
+            // Refresh list in case changes happened
+            loadFolders();
+        }
+
+        // --- Folder Operations ---
+
+        async function deleteCurrentFolder() {
+            if (!currentFolder) return;
+            if (!confirm(`Permanently delete folder "${currentFolder}"?`)) return;
+            await performDelete(currentFolder);
+        }
+
+        async function deleteFolderByName(name) {
+            if (!confirm(`Permanently delete folder "${name}"?`)) return;
+            await performDelete(name);
+        }
+
+        async function performDelete(name) {
+            try {
+                const response = await fetch(`/folders/${name}`, { method: 'DELETE' });
+                if (response.ok) {
+                    if (currentFolder === name) deselectFolder();
+                    else loadFolders();
+                } else {
+                    alert('Failed to delete folder');
+                }
+            } catch (e) {
+                alert('Error deleting folder');
+            }
+        }
+
+        function viewFolderAnalysis() {
+            if (currentFolder) {
+                window.location.href = `/folder_analysis?folder=${encodeURIComponent(currentFolder)}`;
+            }
+        }
+
+        // --- Image Operations ---
+
+        async function loadImages() {
+            if (!currentFolder) return;
+
+            try {
+                const response = await fetch(`/images?folder=${encodeURIComponent(currentFolder)}`);
+                const images = await response.json();
+                const gallery = document.getElementById('gallery');
+                gallery.innerHTML = '';
+
+                let hasProcessing = false;
+
+                if (images.length === 0) {
+                    gallery.innerHTML = '<div style="grid-column: 1/-1; text-align: center; color: #888;">No images uploaded yet.</div>';
+                }
+
+                images.forEach(img => {
+                    // Filter Gatan files from view
+                    const name = img.display_name || img.filename;
+                    if (name.toLowerCase().endsWith('.dm3') || name.toLowerCase().endsWith('.dm4')) return;
+
+                    const isProcessing = img.status === 'processing';
+                    if (isProcessing) hasProcessing = true;
+
+                    const card = document.createElement('div');
+                    card.className = 'image-card';
+
+                    // Paths
+                    let imgSrc = `/results/${img.id}_preview.jpg`;
+                    let onClick = `window.location.href = '/analysis?id=${img.id}&folder=${encodeURIComponent(currentFolder)}'`;
+
+                    if (isProcessing) {
+                        onClick = null;
+                        imgSrc = '/static/assets/loading_screen.png'; // Or fallback
+                    }
+
+                    // Prepare HTML
+                    const processingOverlay = isProcessing ? `
+                        <div class="processing-overlay" onclick="event.stopPropagation()">
+                            <div class="spinner"></div>
+                            <span>Processing...</span>
+                        </div>
+                    ` : '';
+
+                    const errorFallback = `this.onerror=null; this.src='/results/${img.id}_overlay.jpg';`;
+                    const cursorStyle = onClick ? 'cursor: pointer;' : 'cursor: default;';
+
+                    card.innerHTML = `
+                        <div style="position: relative; height: 200px; overflow: hidden;">
+                            <img src="${imgSrc}" alt="${name}" style="${cursorStyle}" onerror="${errorFallback}"
+                                 ${onClick ? `onclick="${onClick}"` : ''}>
+                            ${processingOverlay}
+                            <button class="delete-btn" onclick="deleteImage('${img.id}', event)">×</button>
+                        </div>
+                        <div class="image-info">
+                            <strong>${name}</strong>
+                        </div>
+                    `;
+                    gallery.appendChild(card);
+                });
+
+                // Polling
+                if (hasProcessing) {
+                    if (!pollInterval) pollInterval = setInterval(loadImages, 3000);
+                } else {
+                    if (pollInterval) {
+                        clearInterval(pollInterval);
+                        pollInterval = null;
+                    }
+                }
+
+            } catch (error) {
+                console.error('Error loading images:', error);
+            }
+        }
+
+        async function handleUpload(files) {
+            if (!files.length || !currentFolder) return;
+
+            const formData = new FormData();
+            formData.append('folder', currentFolder);
+            for (let i = 0; i < files.length; i++) {
+                formData.append('files', files[i]);
+            }
+
+            try {
+                const response = await fetch('/upload', { method: 'POST', body: formData });
+                if (response.ok) {
+                    loadImages();
+                } else {
+                    alert('Upload failed');
+                }
+            } catch (error) {
+                console.error('Error uploading:', error);
+                alert('Upload failed');
+            }
+        }
+
+        async function deleteImage(id, event) {
+            event.stopPropagation();
+            if (!confirm('Delete this image?')) return;
+            try {
+                const response = await fetch(`/images/${id}`, { method: 'DELETE' });
+                if (response.ok) loadImages();
+                else alert('Failed to delete');
+            } catch (error) {
+                alert('Error deleting image');
+            }
+        }
+
+        function openModal() {
+            document.getElementById('infoModal').style.display = 'flex';
+        }
+
+        function closeModal(event) {
+            if (event) event.stopPropagation();
+            document.getElementById('infoModal').style.display = 'none';
+        }
+
+        function openUploadHelp() {
+            document.getElementById('uploadHelpModal').style.display = 'flex';
+        }
+
+        function closeUploadHelp(event) {
+            if (event) event.stopPropagation();
+            document.getElementById('uploadHelpModal').style.display = 'none';
+        }
+
+    </script>
+</body>
+
+</html>

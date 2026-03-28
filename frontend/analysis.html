@@ -1,0 +1,987 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Analysis - Gold Nanorod Detector</title>
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" href="/static/assets/loading_screen.png">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+
+        /* --- INFO MODAL --- */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        .modal-content {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            max-width: 600px;
+            width: 90%;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+            position: relative;
+        }
+
+        .modal-close {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            border: none;
+            background: none;
+            font-size: 24px;
+            cursor: pointer;
+            color: #888;
+        }
+
+        .modal-section {
+            margin-bottom: 20px;
+        }
+
+        .modal-section h3 {
+            margin-top: 0;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 10px;
+        }
+
+        .modal-body {
+            font-size: 14px;
+            line-height: 1.6;
+            color: #333;
+        }
+
+        .modal-body ul {
+            margin: 10px 0;
+            padding-left: 20px;
+        }
+
+        .modal-body li {
+            margin-bottom: 8px;
+        }
+
+        .nav {
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .nav a {
+            text-decoration: none;
+            color: #007bff;
+            font-weight: bold;
+        }
+
+        .container {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            /* 2 Columns: Images (Wide) | Analysis (Narrow) */
+            gap: 20px;
+            align-items: start;
+            height: calc(100vh - 100px);
+            /* Full height minus nav */
+        }
+
+        .panel {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+            height: 100%;
+            overflow: auto;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .images-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            flex: 1;
+            overflow: auto;
+            align-items: start;
+        }
+
+        .image-container {
+            width: 100%;
+            text-align: center;
+        }
+
+        .image-container img {
+            max-width: 100%;
+            /* Allow full width */
+            height: auto;
+            max-height: 800px;
+            /* Limit height to keep it viewable */
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .stat-card {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 5px;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 18px;
+            font-weight: bold;
+            color: #007bff;
+        }
+
+        .stat-label {
+            color: #666;
+            font-size: 12px;
+        }
+
+        .charts-container {
+            margin-top: 20px;
+        }
+
+        .chart-wrapper {
+            height: 200px;
+            margin-bottom: 20px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 0;
+            /* Reset margin */
+            font-size: 13px;
+        }
+
+        th,
+        td {
+            padding: 8px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+
+        th {
+            background-color: #f8f9fa;
+            position: sticky;
+            top: 0;
+            z-index: 1;
+        }
+
+        .btn {
+            background-color: #28a745;
+            color: white;
+            padding: 12px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+            margin-top: 10px;
+            width: 100%;
+            text-align: center;
+            box-sizing: border-box;
+            font-size: 16px;
+            font-weight: bold;
+        }
+
+        .btn:hover {
+            background-color: #218838;
+        }
+
+        .btn-primary {
+            background-color: #007bff;
+        }
+
+        .btn-primary:hover {
+            background-color: #0056b3;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 50px;
+            font-size: 18px;
+            color: #666;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .scrollable-table {
+            flex: 1;
+            overflow-y: auto;
+            margin-bottom: 20px;
+            border: 1px solid #eee;
+            margin-bottom: 20px;
+            border: 1px solid #eee;
+        }
+
+        .zoom-btn {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(255, 255, 255, 0.9);
+            border: 1px solid #ccc;
+            padding: 5px 10px;
+            cursor: pointer;
+            z-index: 10;
+            border-radius: 4px;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .zoom-btn.active {
+            background: #007bff;
+            color: white;
+            border-color: #0056b3;
+        }
+
+        .image-wrapper {
+            position: relative;
+            overflow: hidden;
+            width: 100%;
+            /* Fix height or just let it flow? */
+        }
+
+        #processedImage {
+            transition: transform 0.1s ease-out;
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+    </style>
+</head>
+
+<body>
+    <!-- Header -->
+    <div class="app-header"
+        style="display: flex; align-items: center; justify-content: space-between; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 20px;">
+        <div style="display: flex; align-items: center; gap: 30px;">
+            <img src="/static/assets/headers/header_default.png" alt="Logo"
+                style="width: 270px; height: auto; border-radius: 8px; object-fit: contain;" id="appHeaderImage">
+            <div>
+                <h1 style="margin: 0; font-size: 32px; color: #333;">Nanorod Detector 2.0</h1>
+                <p style="margin: 5px 0 0; color: #666; font-size: 16px;">Detects, sizes, and analyzes gold nanorods.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const HEADER_IMAGES = [
+            'header_1.png', 'header_2.png', 'header_3.png', 'header_4.png',
+            'header_5.png', 'header_6.png', 'header_7.png', 'header_8.png',
+            'header_9.png', 'header_default.png'
+        ];
+
+        function randomizeHeader() {
+            const imgElement = document.getElementById('appHeaderImage');
+            if (!imgElement) return;
+
+            if (!sessionStorage.getItem('app_booted')) {
+                sessionStorage.setItem('app_booted', 'true');
+                imgElement.src = '/static/assets/headers/header_default.png';
+            } else {
+                const randomImage = HEADER_IMAGES[Math.floor(Math.random() * HEADER_IMAGES.length)];
+                imgElement.src = '/static/assets/headers/' + randomImage;
+            }
+        }
+        randomizeHeader();
+    </script>
+
+    <div class="nav">
+        <a href="#" id="backLink" onclick="goBack()">← Back to Folder</a>
+        <h2 id="pageTitle" style="margin: 0; position: absolute; left: 50%; transform: translateX(-50%);">Analysis</h2>
+        <button onclick="openInstructions()"
+            style="background: none; border: 1px solid #007bff; color: #007bff; padding: 5px 15px; border-radius: 4px; cursor: pointer;">Instructions</button>
+    </div>
+
+    <!-- Instructions Modal -->
+    <div id="instrModal" class="modal-overlay" onclick="closeInstructions(event)">
+        <div class="modal-content" onclick="event.stopPropagation()">
+            <button class="modal-close" onclick="closeInstructions(event)">×</button>
+            <div class="modal-section">
+                <h3>Analysis Instructions</h3>
+                <div class="modal-body">
+                    <p><strong>1. Image Review:</strong> center panel shows two views:</p>
+                    <ul>
+                        <li><strong>Left:</strong> Segmented Nanoparticles (Raw detection).</li>
+                        <li><strong>Right:</strong> Fitted AuNRs using Rotated Bounding Boxes (Final sizing).</li>
+                    </ul>
+                    <p><strong>2. Verify & Exclude:</strong> Check the <em>Ledger</em> (right panel). If a detection is
+                        incorrect (e.g., scale bar, dirt, not a rod), uncheck the <strong>'nanoparticles'</strong> box
+                        for that ID to exclude it.</p>
+                    <p><strong>3. Calculate:</strong> Press <strong>"Calculate Analysis"</strong> to generate statistics
+                        and histogram plots based on valid selections.</p>
+                    <p><strong>4. Save & Export:</strong></p>
+                    <ul>
+                        <li><strong>Download Excel:</strong> Get the raw data for this specific image.</li>
+                        <li><strong>Save for Folder Analysis:</strong> Confirms these results for the aggregate folder
+                            report.</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="loading" class="loading">
+        <div class="spinner"></div>
+        <p>Processing Image...</p>
+    </div>
+    <div id="content" class="container" style="display: none;">
+        <!-- Column 1: Images (Grouped) -->
+        <div class="panel">
+            <h2 style="text-align: center;">Detection Results</h2>
+            <div class="images-grid">
+                <div class="image-container">
+                    <h3>Segmentation Overlay</h3>
+                    <img id="overlayImage" src="" alt="Segmentation Overlay">
+                </div>
+                <div class="image-container" style="position: relative;">
+                    <h3>Fitted AuNRs</h3>
+                    <div class="image-wrapper" id="zoomWrapper">
+                        <button class="zoom-btn" onclick="toggleZoom()" id="zoomToggle">
+                            <span style="font-size: 16px;">🔍</span> Zoom
+                        </button>
+                        <img id="processedImage" src="" alt="Processed Image">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Column 2: Analysis Selection -->
+        <div class="panel">
+            <h2>Selection</h2>
+
+            <div
+                style="background: #e9ecef; padding: 10px; border-radius: 5px; margin-bottom: 10px; text-align: center; font-size: 12px;">
+                <strong>Calibration:</strong> <span id="calibrationMethod">-</span> <br>
+                <strong>Pixel Size:</strong> <span id="pixelSize">-</span> nm/px
+            </div>
+
+            <div class="scrollable-table">
+                <table id="dataTable">
+                    <thead>
+                        <tr>
+                            <th><input type="checkbox" id="selectAll" checked onclick="toggleAll(this)"></th>
+                            <th>ID</th>
+                            <th>L (nm)</th>
+                            <th>W (nm)</th>
+                            <th>AR</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+
+            <button id="analyzeBtn" class="btn btn-primary" onclick="calculateAnalysis()">Calculate Analysis ↓</button>
+        </div>
+    </div>
+
+    <!-- Bottom Section: Analysis Results -->
+    <div id="analysisResults" class="panel hidden" style="margin-top: 20px;">
+        <div
+            style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #eee; padding-bottom: 10px; margin-bottom: 20px;">
+            <h2 style="margin: 0;">Analysis Statistics</h2>
+            <button class="btn" style="width: auto; padding: 8px 16px; margin: 0; background-color: #6c757d;"
+                onclick="scrollToSelection()">↑ Edit Selection</button>
+        </div>
+
+        <div class="stats-grid" style="grid-template-columns: repeat(4, 1fr);"> <!-- 4 Columns for stats now -->
+            <div class="stat-card">
+                <div class="stat-value" id="count">-</div>
+                <div class="stat-label">Count</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="meanLength">-</div>
+                <div class="stat-label">Mean L (nm)</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="meanWidth">-</div>
+                <div class="stat-label">Mean W (nm)</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="meanAR">-</div>
+                <div class="stat-label">Mean AR</div>
+            </div>
+        </div>
+
+        <div class="charts-container" style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+            <div class="chart-wrapper">
+                <canvas id="lengthChart"></canvas>
+            </div>
+            <div class="chart-wrapper">
+                <canvas id="widthChart"></canvas>
+            </div>
+        </div>
+
+        <div style="text-align: center; margin-top: 20px; display: flex; gap: 10px; justify-content: center;">
+            <a id="downloadExcel" href="#" class="btn" style="width: auto; padding: 12px 40px;">Download Excel
+                Report</a>
+            <button onclick="downloadPDF()" class="btn"
+                style="width: auto; padding: 12px 40px; background-color: #6c757d;">Download PDF Report</button>
+            <button id="addToFolderBtn" onclick="addToFolderAnalysis()" class="btn"
+                style="width: auto; padding: 12px 40px; background-color: #28a745; display: none;">Add to Folder
+                Analysis</button>
+        </div>
+    </div>
+
+    <script>
+        const urlParams = new URLSearchParams(window.location.search);
+        const imageId = urlParams.get('id');
+        const folderParam = urlParams.get('folder');
+
+        if (folderParam) {
+            const backLink = document.getElementById('backLink');
+            backLink.href = `/?folder=${encodeURIComponent(folderParam)}`;
+            backLink.innerText = `← Back to ${folderParam}`;
+
+            // Show Add to Folder button
+            document.getElementById('addToFolderBtn').style.display = 'inline-block';
+        }
+
+        if (!imageId) {
+            window.location.href = '/';
+        }
+
+        let lengthChartInstance = null;
+        let widthChartInstance = null;
+        let currentData = [];
+        let currentFilename = "";
+
+        async function processImage() {
+            try {
+                let url = `/process/${imageId}`;
+
+                // document.getElementById('loading').style.display = 'block'; 
+                // Don't show full screen blocking loading for instant fetch
+
+                const response = await fetch(url, { method: 'POST' });
+                const data = await response.json();
+
+                if (response.ok) {
+                    displayResults(data);
+                } else {
+                    throw new Error(data.detail || 'Server returned error');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Error processing image: ' + error.message);
+            }
+        }
+
+        function displayResults(data) {
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('content').style.display = 'grid';
+
+            currentData = data.data || [];
+            currentFilename = data.filename || imageId;
+
+            // Images
+            // Add timestamp to prevent caching
+            const timestamp = new Date().getTime();
+            document.getElementById('processedImage').src = `${data.image_url}?t=${timestamp}`;
+
+            if (data.overlay_url) {
+                document.getElementById('overlayImage').src = `${data.overlay_url}?t=${timestamp}`;
+            } else {
+                // If no overlay, hide its container or show a placeholder
+                document.getElementById('overlayImage').parentElement.style.display = 'none';
+            }
+
+            // Download Link
+            // Download Link
+            const downloadBtn = document.getElementById('downloadExcel');
+
+            // Remove old listeners
+            downloadBtn.onclick = null;
+            downloadBtn.removeAttribute('href');
+
+            downloadBtn.onclick = downloadFilteredReport;
+            downloadBtn.style.cursor = 'pointer';
+
+            // Calibration
+
+            // Calibration
+            if (data.pixel_size_nm) {
+                document.getElementById('pixelSize').textContent = data.pixel_size_nm.toFixed(4);
+            }
+
+            // Update calibration info
+            let calibText = data.calibration_info ? data.calibration_info.method : 'Unknown';
+            if (data.calibration_info && data.calibration_info.description) {
+                calibText = data.calibration_info.description.replace(/^Calibration:\s*/, '');
+            } else if (data.calibration_info && data.calibration_info.source_file) {
+                calibText = `Linked: ${data.calibration_info.source_file}`;
+            }
+            document.getElementById('calibrationMethod').textContent = calibText;
+
+            // Restore Selection from LocalStorage (Cache)
+            const excludedIds = JSON.parse(localStorage.getItem('excluded_' + imageId) || '[]');
+
+            // Table Population
+            const tbody = document.querySelector('#dataTable tbody');
+            tbody.innerHTML = '';
+            if (currentData.length > 0) {
+                currentData.forEach((rod, index) => {
+                    const isExcluded = excludedIds.includes(rod.id);
+                    const checkedState = isExcluded ? '' : 'checked';
+
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td><input type="checkbox" class="rod-checkbox" data-index="${index}" ${checkedState}></td>
+                        <td>${rod.id}</td>
+                        <td>${rod.length_nm.toFixed(1)}</td>
+                        <td>${rod.width_nm.toFixed(1)}</td>
+                        <td>${rod.aspect_ratio.toFixed(1)}</td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            }
+
+            // Automatically Calculate to show graphs immediately
+            calculateAnalysis(true);
+        }
+
+        function toggleAll(source) {
+            const checkboxes = document.querySelectorAll('.rod-checkbox');
+            for (let i = 0; i < checkboxes.length; i++) {
+                checkboxes[i].checked = source.checked;
+            }
+        }
+
+        function scrollToSelection() {
+            document.getElementById('content').scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function calculateAnalysis(isAuto = false) {
+            const checkboxes = document.querySelectorAll('.rod-checkbox');
+            const includedData = [];
+            const excludedIds = [];
+
+            checkboxes.forEach(cb => {
+                const index = parseInt(cb.getAttribute('data-index'));
+                if (cb.checked) {
+                    includedData.push(currentData[index]);
+                } else {
+                    if (currentData[index]) {
+                        excludedIds.push(currentData[index].id);
+                    }
+                }
+            });
+
+            // SCA-CACHING: Save excluded IDs to LocalStorage
+            localStorage.setItem('excluded_' + imageId, JSON.stringify(excludedIds));
+
+            // Show Results Section
+            document.getElementById('analysisResults').classList.remove('hidden');
+
+            // Calculate stats
+            const count = includedData.length;
+
+            if (count > 0) {
+                const lengths = includedData.map(d => d.length_nm);
+                const widths = includedData.map(d => d.width_nm);
+                const ars = includedData.map(d => d.aspect_ratio);
+
+                const meanLength = lengths.reduce((a, b) => a + b, 0) / count;
+                const meanWidth = widths.reduce((a, b) => a + b, 0) / count;
+                const meanAR = ars.reduce((a, b) => a + b, 0) / count;
+
+                // Std Dev
+                const stdLength = Math.sqrt(lengths.map(x => Math.pow(x - meanLength, 2)).reduce((a, b) => a + b, 0) / count);
+                const stdWidth = Math.sqrt(widths.map(x => Math.pow(x - meanWidth, 2)).reduce((a, b) => a + b, 0) / count);
+                const stdAR = Math.sqrt(ars.map(x => Math.pow(x - meanAR, 2)).reduce((a, b) => a + b, 0) / count);
+
+                document.getElementById('count').textContent = count;
+                document.getElementById('meanLength').textContent = meanLength.toFixed(1) + ' ± ' + stdLength.toFixed(1);
+                document.getElementById('meanWidth').textContent = meanWidth.toFixed(1) + ' ± ' + stdWidth.toFixed(1);
+                document.getElementById('meanAR').textContent = meanAR.toFixed(1) + ' ± ' + stdAR.toFixed(1);
+
+                // Update Charts
+                lengthChartInstance = createHistogram('lengthChart', 'Length Distribution (nm)', lengths, lengthChartInstance);
+                widthChartInstance = createHistogram('widthChart', 'Width Distribution (nm)', widths, widthChartInstance);
+
+            } else {
+                document.getElementById('count').textContent = "0";
+                document.getElementById('meanLength').textContent = "-";
+                document.getElementById('meanWidth').textContent = "-";
+                document.getElementById('meanAR').textContent = "-";
+
+                if (lengthChartInstance) lengthChartInstance.destroy();
+                if (widthChartInstance) widthChartInstance.destroy();
+            }
+
+            // Scroll to bottom only if manual click
+            if (!isAuto) {
+                document.getElementById('analysisResults').scrollIntoView({ behavior: 'smooth' });
+            }
+        }
+
+        function createHistogram(canvasId, label, data, existingChart) {
+            if (existingChart) {
+                existingChart.destroy();
+            }
+
+            const ctx = document.getElementById(canvasId).getContext('2d');
+
+            if (!data || data.length === 0) return null;
+
+            // Simple binning
+            const binCount = 10;
+            const min = Math.min(...data);
+            const max = Math.max(...data);
+
+            // Handle case where min == max (single value or all same)
+            let step = (max - min) / binCount;
+            if (step === 0) step = 1;
+
+            const bins = new Array(binCount).fill(0);
+            const labels = [];
+
+            for (let i = 0; i < binCount; i++) {
+                labels.push((min + i * step).toFixed(1) + '-' + (min + (i + 1) * step).toFixed(1));
+            }
+
+            data.forEach(val => {
+                const binIndex = Math.min(Math.floor((val - min) / step), binCount - 1);
+                bins[binIndex]++;
+            });
+
+            return new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: label,
+                        data: bins,
+                        backgroundColor: 'rgba(54, 162, 235, 0.5)',
+                        borderColor: 'rgba(54, 162, 235, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: { beginAtZero: true }
+                    }
+                }
+            });
+        }
+
+
+
+        // --- Zoom Logic ---
+        let isZoomActive = false;
+        const processedImage = document.getElementById('processedImage');
+        const zoomWrapper = document.getElementById('zoomWrapper');
+        const zoomToggle = document.getElementById('zoomToggle');
+
+        function toggleZoom() {
+            isZoomActive = !isZoomActive;
+            if (isZoomActive) {
+                zoomToggle.classList.add('active');
+                zoomWrapper.style.cursor = 'zoom-in';
+            } else {
+                zoomToggle.classList.remove('active');
+                zoomWrapper.style.cursor = 'default';
+                // Reset
+                processedImage.style.transform = 'scale(1)';
+            }
+        }
+
+        zoomWrapper.addEventListener('mousemove', function (e) {
+            if (!isZoomActive) return;
+
+            const rect = zoomWrapper.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+
+            // Calculate percentage
+            const xPercent = (x / rect.width) * 100;
+            const yPercent = (y / rect.height) * 100;
+
+            processedImage.style.transformOrigin = `${xPercent}% ${yPercent}%`;
+            processedImage.style.transform = 'scale(2.5)';
+        });
+
+        zoomWrapper.addEventListener('mouseleave', function () {
+            if (!isZoomActive) return;
+            processedImage.style.transform = 'scale(1)';
+        });
+
+        async function downloadFilteredReport() {
+            const checkboxes = document.querySelectorAll('.rod-checkbox');
+            const selectedIds = [];
+            checkboxes.forEach(cb => {
+                if (cb.checked) {
+                    // ID is in column 2 (index 1), but we have full data in currentData by index
+                    const index = parseInt(cb.getAttribute('data-index'));
+                    if (currentData[index]) {
+                        selectedIds.push(currentData[index].id);
+                    }
+                }
+            });
+
+            if (selectedIds.length === 0) {
+                alert("Please select at least one particle to export.");
+                return;
+            }
+
+            try {
+                downloadBtn = document.getElementById('downloadExcel');
+                const originalText = downloadBtn.innerText;
+                downloadBtn.innerText = "Generating Report...";
+
+                const response = await fetch('/export', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        image_id: imageId,
+                        selected_ids: selectedIds
+                    })
+                });
+
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    // Use filename from response header if possible, or fallback to currentFilename
+                    // But simpler: just use our known filename format
+                    a.download = `${currentFilename || imageId}_detected.xlsx`;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    window.URL.revokeObjectURL(url);
+                } else {
+                    const err = await response.json();
+                    alert("Export failed: " + (err.detail || "Unknown error"));
+                }
+
+                downloadBtn.innerText = originalText;
+            } catch (e) {
+                console.error(e);
+                alert("Export failed");
+                document.getElementById('downloadExcel').innerText = "Download Excel Report";
+            }
+        }
+
+        async function saveSelectionForFolder() {
+            if (!currentFolder) {
+                alert("No folder context available.");
+                return;
+            }
+
+            const checkboxes = document.querySelectorAll('.rod-checkbox');
+            const selectedIds = [];
+            checkboxes.forEach(cb => {
+                if (cb.checked) {
+                    selectedIds.push(parseInt(cb.getAttribute('data-index'))); // Index maps to original data order? No, ID is safer
+                    // Wait, data-index is index in currentData. Check logic.
+                    // currentData[index].id is the ID.
+                }
+            });
+
+            // Re-map to actual IDs
+            const idsToSave = [];
+            checkboxes.forEach(cb => {
+                if (cb.checked) {
+                    const idx = cb.getAttribute('data-index');
+                    idsToSave.push(currentData[idx].id);
+                }
+            });
+
+            try {
+                const response = await fetch(`/folders/${encodeURIComponent(currentFolder)}/save_selection`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        image_id: imageId,
+                        selected_ids: idsToSave
+                    })
+                });
+
+                if (response.ok) {
+                    alert("Selection saved for Folder Analysis!");
+                } else {
+                    const err = await response.json();
+                    alert("Error saving: " + err.detail);
+                }
+            } catch (e) {
+                console.error(e);
+                alert("Failed to save selection.");
+            }
+        }
+
+        // --- Instructions Modal ---
+        function openInstructions() {
+            document.getElementById('instrModal').style.display = 'flex';
+        }
+
+        function closeInstructions(event) {
+            if (event) event.stopPropagation();
+            document.getElementById('instrModal').style.display = 'none';
+        }
+
+        async function addToFolderAnalysis() {
+            if (!folderParam) return;
+
+            const checkboxes = document.querySelectorAll('.rod-checkbox');
+            const selectedIds = [];
+            checkboxes.forEach(cb => {
+                if (cb.checked) {
+                    const index = parseInt(cb.getAttribute('data-index'));
+                    if (currentData[index]) {
+                        selectedIds.push(currentData[index].id);
+                    }
+                }
+            });
+
+            if (selectedIds.length === 0) {
+                alert("Please select at least one particle.");
+                return;
+            }
+
+            try {
+                const btn = document.getElementById('addToFolderBtn');
+                const originalText = btn.innerText;
+                btn.innerText = "Saving...";
+                btn.disabled = true;
+
+                const response = await fetch(`/folders/${encodeURIComponent(folderParam)}/save_selection`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        image_id: imageId,
+                        selected_ids: selectedIds
+                    })
+                });
+
+                if (response.ok) {
+                    const res = await response.json();
+                    alert(`Successfully added ${res.count} particles from this image to folder analysis.`);
+                } else {
+                    const err = await response.json();
+                    alert("Error: " + (err.detail || "Server Error"));
+                }
+
+                btn.innerText = "Add to Folder Analysis";
+                btn.disabled = false;
+            } catch (e) {
+                console.error(e);
+                alert("Failed to save selection.");
+                document.getElementById('addToFolderBtn').innerText = "Add to Folder Analysis";
+            }
+        }
+
+        async function downloadPDF() {
+            const element = document.getElementById('analysisResults');
+
+            // Create a temporary container for PDF generation
+            const pdfContainer = document.createElement('div');
+            pdfContainer.style.width = '100%';
+            pdfContainer.style.background = 'white';
+            pdfContainer.style.padding = '20px';
+
+            // Add Header Info
+            const title = document.createElement('h2');
+            title.innerText = `Analysis Report: ${currentFilename}`;
+            title.style.textAlign = 'center';
+            title.style.marginBottom = '20px';
+            pdfContainer.appendChild(title);
+
+            // Add Images (Resized for PDF)
+            const imgContainer = document.createElement('div');
+            imgContainer.style.display = 'flex';
+            imgContainer.style.justifyContent = 'center';
+            imgContainer.style.gap = '20px';
+            imgContainer.style.marginBottom = '20px';
+            imgContainer.style.height = '300px';
+
+            const img1 = document.getElementById('overlayImage').cloneNode(true);
+            const img2 = document.getElementById('processedImage').cloneNode(true);
+
+            [img1, img2].forEach(img => {
+                img.style.maxHeight = '100%';
+                img.style.maxWidth = '45%';
+                img.style.objectFit = 'contain';
+                img.style.transform = 'none'; // reset zoom
+                imgContainer.appendChild(img);
+            });
+            pdfContainer.appendChild(imgContainer);
+
+            // Clone Results Section
+            const clonedContent = element.cloneNode(true);
+
+            // Remove buttons from PDF
+            const buttons = clonedContent.querySelectorAll('button, a.btn');
+            buttons.forEach(btn => btn.remove());
+
+            // Replace Chart Canvases with Images (Crucial for PDF)
+            const originalCanvases = element.querySelectorAll('canvas');
+            const clonedCanvases = clonedContent.querySelectorAll('canvas');
+
+            originalCanvases.forEach((origCanvas, index) => {
+                if (!clonedCanvases[index]) return;
+                try {
+                    const imgData = origCanvas.toDataURL('image/png');
+                    const img = document.createElement('img');
+                    img.src = imgData;
+                    img.style.width = '100%';
+                    img.style.maxHeight = '200px';
+                    img.style.objectFit = 'contain';
+                    img.style.display = 'block';
+
+                    const clonedCanvas = clonedCanvases[index];
+                    clonedCanvas.parentNode.replaceChild(img, clonedCanvas);
+                } catch (e) {
+                    console.error("Chart capture error:", e);
+                }
+            });
+
+            pdfContainer.appendChild(clonedContent);
+
+            const opt = {
+                margin: 0.5,
+                filename: `${currentFilename}_report.pdf`,
+                image: { type: 'jpeg', quality: 0.98 },
+                html2canvas: { scale: 2, useCORS: true },
+                jsPDF: { unit: 'in', format: 'letter', orientation: 'landscape' }
+            };
+
+            html2pdf().set(opt).from(pdfContainer).save();
+        }
+
+        processImage();
+    </script>
+</body>
+
+</html>
