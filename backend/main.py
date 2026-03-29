@@ -34,10 +34,26 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 UPLOAD_DIR = BASE_DIR / "uploads"
 RESULTS_DIR = BASE_DIR / "results"
 FRONTEND_DIR = BASE_DIR / "frontend"
+RESULTS_SCHEMA_VERSION = 2
 
 UPLOAD_DIR.mkdir(exist_ok=True)
 RESULTS_DIR.mkdir(exist_ok=True)
 FRONTEND_DIR.mkdir(exist_ok=True)
+
+
+def _cached_results_are_current(payload: dict) -> bool:
+    if payload.get("results_schema_version") != RESULTS_SCHEMA_VERSION:
+        return False
+
+    calibration_info = payload.get("calibration_info") or {}
+    method = calibration_info.get("method")
+
+    if method == "default":
+        return False
+    if method == "uncalibrated" and "is_placeholder" not in calibration_info:
+        return False
+
+    return True
 
 # Serve Frontend
 app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
@@ -102,9 +118,6 @@ async def delete_folder(folder_name: str):
         # For now, let's just delete the upload folder. Orphaned results are harmless but take space.
         
         return {"status": "success", "message": "Folder deleted"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -300,7 +313,7 @@ async def upload_images(background_tasks: BackgroundTasks, folder: str = Form(No
                 original_stem = Path(save_name).stem
                 
             for f in search_dir.glob("*"):
-                if f.suffix.lower() in ['.dm3', '.dm4']:
+                if f.suffix.lower() in ['.dm3', '.dm4', '.emd']:
                     dm3_stem = None
                     if len(f.name) > 37 and f.name[36] == '_':
                         dm3_stem = Path(f.name[37:]).stem
@@ -328,7 +341,7 @@ async def list_images(folder: str = Query(None)):
             return [] # Empty if folder doesn't exist
             
     for path in target_dir.glob("*"):
-        if path.is_file() and path.suffix.lower() in ['.tif', '.tiff', '.jpg', '.jpeg', '.png', '.dm3', '.dm4']:
+        if path.is_file() and path.suffix.lower() in ['.tif', '.tiff', '.jpg', '.jpeg', '.png', '.dm3', '.dm4', '.emd']:
             # Try to extract original name if it follows UUID_Name pattern
             display_name = path.name
             if len(path.name) > 37 and path.name[36] == '_':
@@ -372,56 +385,58 @@ async def delete_image(image_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/process/{image_id}")
-async def process_image_endpoint(image_id: str, manual_pixel_size: float = None, requested_bar_length_nm: float = None):
+async def process_image_endpoint(image_id: str, manual_pixel_size: float = None, requested_bar_length_nm: float = None, force_reprocess: bool = False):
     try:
         # Find file with image_id (recursive search for subfolders)
         files = list(UPLOAD_DIR.rglob(f"{image_id}.*"))
         if not files:
             raise HTTPException(status_code=404, detail="Image not found")
-        
+
         input_path = files[0]
         search_dir = input_path.parent
-        
-        # Try to find a matching .dm3 file for calibration
+
+        # Try to find a matching calibration file
         calibration_source_path = None
-        
+
         # Extract original filename stem (removing UUID prefix if present)
         current_filename = input_path.name
         original_stem = None
-        
+
         if len(current_filename) > 37 and current_filename[36] == '_':
             original_name_with_ext = current_filename[37:]
             original_stem = Path(original_name_with_ext).stem
         else:
             original_stem = input_path.stem
 
-        # Search for .dm3/.dm4 files in the SAME directory
+        # Search for .dm3/.dm4/.emd files in the SAME directory
         if original_stem:
             for f in search_dir.glob("*"):
-                if f.suffix.lower() in ['.dm3', '.dm4']:
-                    dm3_stem = None
+                if f.suffix.lower() in ['.dm3', '.dm4', '.emd']:
+                    cal_stem = None
                     if len(f.name) > 37 and f.name[36] == '_':
-                        dm3_stem = Path(f.name[37:]).stem
+                        cal_stem = Path(f.name[37:]).stem
                     else:
-                        dm3_stem = f.stem
-                    
-                    if dm3_stem == original_stem:
+                        cal_stem = f.stem
+
+                    if cal_stem == original_stem:
                         calibration_source_path = f
                         break
-        
-        if not manual_pixel_size:
+
+        if not manual_pixel_size and not force_reprocess:
             # Check for existing results to avoid re-processing
             results_path = RESULTS_DIR / f"{image_id}_results.json"
             if results_path.exists():
                 import json
                 try:
                     with open(results_path, 'r') as f:
-                        return json.load(f)
+                        cached = json.load(f)
+                    if _cached_results_are_current(cached):
+                        return cached
                 except Exception:
                     pass # If corrupt, re-process
 
         result = process_image(input_path, RESULTS_DIR, manual_pixel_size, calibration_source_path)
-        
+
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

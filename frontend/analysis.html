@@ -93,17 +93,15 @@
 
         .container {
             display: grid;
-            grid-template-columns: 2fr 1fr;
-            /* 2 Columns: Images (Wide) | Analysis (Narrow) */
+            grid-template-columns: 3fr 2fr;
             gap: 20px;
             align-items: start;
-            height: calc(100vh - 100px);
-            /* Full height minus nav */
+            height: calc(100vh - 120px);
         }
 
         .panel {
             background: white;
-            padding: 20px;
+            padding: 15px;
             border-radius: 10px;
             box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
             height: 100%;
@@ -112,27 +110,23 @@
             flex-direction: column;
         }
 
-        .images-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 20px;
-            flex: 1;
-            overflow: auto;
-            align-items: start;
-        }
-
         .image-container {
             width: 100%;
             text-align: center;
+            flex: 1;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
         }
 
         .image-container img {
             max-width: 100%;
-            /* Allow full width */
+            max-height: calc(100vh - 220px);
             height: auto;
-            max-height: 800px;
-            /* Limit height to keep it viewable */
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            object-fit: contain;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
         }
 
         .stats-grid {
@@ -266,14 +260,83 @@
             position: relative;
             overflow: hidden;
             width: 100%;
-            /* Fix height or just let it flow? */
+            flex: 1;
+            min-height: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
 
         #processedImage {
             transition: transform 0.1s ease-out;
-            width: 100%;
+            max-width: 100%;
+            max-height: calc(100vh - 220px);
             height: auto;
+            object-fit: contain;
             display: block;
+        }
+
+        /* Scale bar calibration */
+        .calibration-panel {
+            background: #fff3cd;
+            border: 1px solid #ffc107;
+            border-radius: 5px;
+            padding: 8px;
+            margin-bottom: 10px;
+            font-size: 12px;
+        }
+        .calibration-panel h4 {
+            margin: 0 0 6px 0;
+            font-size: 13px;
+            color: #856404;
+        }
+        .calibration-panel .cal-option {
+            margin-bottom: 8px;
+            padding: 6px;
+            background: rgba(255,255,255,0.7);
+            border-radius: 4px;
+        }
+        .calibration-panel label {
+            font-weight: bold;
+            font-size: 12px;
+        }
+        .calibration-panel input[type="number"] {
+            width: 80px;
+            padding: 3px 6px;
+            border: 1px solid #ccc;
+            border-radius: 3px;
+            font-size: 12px;
+        }
+        .calibration-panel button {
+            padding: 4px 10px;
+            font-size: 11px;
+            border: 1px solid #007bff;
+            background: #007bff;
+            color: white;
+            border-radius: 3px;
+            cursor: pointer;
+        }
+        .calibration-panel button:hover {
+            background: #0056b3;
+        }
+        .calibration-panel button.cal-secondary {
+            background: #6c757d;
+            border-color: #6c757d;
+        }
+        .calibration-panel button.cal-active {
+            background: #28a745;
+            border-color: #28a745;
+        }
+
+        /* Canvas overlay for line drawing */
+        #scaleCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            cursor: crosshair;
+            z-index: 20;
         }
     </style>
 </head>
@@ -281,13 +344,13 @@
 <body>
     <!-- Header -->
     <div class="app-header"
-        style="display: flex; align-items: center; justify-content: space-between; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 20px;">
-        <div style="display: flex; align-items: center; gap: 30px;">
+        style="display: flex; align-items: center; justify-content: space-between; background: white; padding: 8px 16px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); margin-bottom: 12px;">
+        <div style="display: flex; align-items: center; gap: 12px;">
             <img src="/static/assets/headers/header_default.png" alt="Logo"
-                style="width: 270px; height: auto; border-radius: 8px; object-fit: contain;" id="appHeaderImage">
+                style="width: 108px; height: auto; border-radius: 4px; object-fit: contain;" id="appHeaderImage">
             <div>
-                <h1 style="margin: 0; font-size: 32px; color: #333;">Nanorod Detector 2.0</h1>
-                <p style="margin: 5px 0 0; color: #666; font-size: 16px;">Detects, sizes, and analyzes gold nanorods.
+                <h1 style="margin: 0; font-size: 16px; color: #333;">Nanorod Detector 2.0</h1>
+                <p style="margin: 2px 0 0; color: #666; font-size: 11px;">Detects, sizes, and analyzes gold nanorods.
                 </p>
             </div>
         </div>
@@ -357,20 +420,14 @@
     <div id="content" class="container" style="display: none;">
         <!-- Column 1: Images (Grouped) -->
         <div class="panel">
-            <h2 style="text-align: center;">Detection Results</h2>
-            <div class="images-grid">
-                <div class="image-container">
-                    <h3>Segmentation Overlay</h3>
-                    <img id="overlayImage" src="" alt="Segmentation Overlay">
-                </div>
-                <div class="image-container" style="position: relative;">
-                    <h3>Fitted AuNRs</h3>
-                    <div class="image-wrapper" id="zoomWrapper">
-                        <button class="zoom-btn" onclick="toggleZoom()" id="zoomToggle">
-                            <span style="font-size: 16px;">🔍</span> Zoom
-                        </button>
-                        <img id="processedImage" src="" alt="Processed Image">
-                    </div>
+            <h2 style="text-align: center;">Fitted AuNRs</h2>
+            <div class="image-container" style="position: relative; flex: 1; overflow: auto;">
+                <div class="image-wrapper" id="zoomWrapper">
+                    <button class="zoom-btn" onclick="toggleZoom()" id="zoomToggle">
+                        <span style="font-size: 16px;">🔍</span> Zoom
+                    </button>
+                    <canvas id="scaleCanvas" style="display: none;"></canvas>
+                    <img id="processedImage" src="" alt="Processed Image">
                 </div>
             </div>
         </div>
@@ -382,7 +439,34 @@
             <div
                 style="background: #e9ecef; padding: 10px; border-radius: 5px; margin-bottom: 10px; text-align: center; font-size: 12px;">
                 <strong>Calibration:</strong> <span id="calibrationMethod">-</span> <br>
-                <strong>Pixel Size:</strong> <span id="pixelSize">-</span> nm/px
+                <strong>Pixel Size:</strong> <span id="pixelSize">-</span><span id="pixelSizeUnit"> nm/px</span>
+            </div>
+            <div style="margin-bottom: 10px; text-align: center;">
+                <button id="toggleCalibrationBtn" class="cal-secondary" onclick="toggleCalibrationPanel()"
+                    style="padding: 6px 14px; font-size: 12px;">Re-scale</button>
+            </div>
+
+            <!-- Scale Bar Calibration Panel -->
+            <div id="calibrationPanel" class="calibration-panel" style="display: none;">
+                <h4 id="calibrationPanelTitle">Scale Calibration</h4>
+                <p id="calibrationPanelNote" style="margin: 0 0 8px 0; color: #6b5a00;">You can recalibrate this image at any time.</p>
+                <div class="cal-option">
+                    <label>Option 1: Manual</label>
+                    <p style="margin: 4px 0; color: #555;">Draw a line along the scale bar in the image, then enter its length.</p>
+                    <button id="drawLineBtn" onclick="startDrawLine()">Draw Line on Image</button>
+                    <span id="lineStatus" style="margin-left: 6px; color: #888;"></span>
+                    <div style="margin-top: 6px;">
+                        <input type="number" id="scaleNmInput" placeholder="nm" min="1" step="1">
+                        <span style="font-size: 11px;">nm</span>
+                        <button onclick="applyManualScale()" style="margin-left: 4px;">Set Scale</button>
+                    </div>
+                </div>
+                <div class="cal-option">
+                    <label>Option 2: Auto-detect (OCR)</label>
+                    <p style="margin: 4px 0; color: #555;">Automatically detect scale bar line &amp; text in the image.</p>
+                    <button class="cal-secondary" onclick="autoDetectScale()">Auto Detect</button>
+                    <span id="autoDetectStatus" style="margin-left: 6px; color: #888;"></span>
+                </div>
             </div>
 
             <div class="scrollable-table">
@@ -391,8 +475,8 @@
                         <tr>
                             <th><input type="checkbox" id="selectAll" checked onclick="toggleAll(this)"></th>
                             <th>ID</th>
-                            <th>L (nm)</th>
-                            <th>W (nm)</th>
+                            <th id="lengthHeader">L (nm)</th>
+                            <th id="widthHeader">W (nm)</th>
                             <th>AR</th>
                         </tr>
                     </thead>
@@ -420,11 +504,11 @@
             </div>
             <div class="stat-card">
                 <div class="stat-value" id="meanLength">-</div>
-                <div class="stat-label">Mean L (nm)</div>
+                <div class="stat-label" id="meanLengthLabel">Mean L (nm)</div>
             </div>
             <div class="stat-card">
                 <div class="stat-value" id="meanWidth">-</div>
-                <div class="stat-label">Mean W (nm)</div>
+                <div class="stat-label" id="meanWidthLabel">Mean W (nm)</div>
             </div>
             <div class="stat-card">
                 <div class="stat-value" id="meanAR">-</div>
@@ -474,6 +558,9 @@
         let widthChartInstance = null;
         let currentData = [];
         let currentFilename = "";
+        let currentIsPlaceholderCalibration = false;
+        let currentCalibrationInfo = null;
+        let calibrationPanelOpen = false;
 
         async function processImage() {
             try {
@@ -502,18 +589,15 @@
 
             currentData = data.data || [];
             currentFilename = data.filename || imageId;
+            currentIsPlaceholderCalibration = Boolean(data.calibration_info && data.calibration_info.is_placeholder);
+            currentCalibrationInfo = data.calibration_info || null;
 
             // Images
             // Add timestamp to prevent caching
             const timestamp = new Date().getTime();
             document.getElementById('processedImage').src = `${data.image_url}?t=${timestamp}`;
 
-            if (data.overlay_url) {
-                document.getElementById('overlayImage').src = `${data.overlay_url}?t=${timestamp}`;
-            } else {
-                // If no overlay, hide its container or show a placeholder
-                document.getElementById('overlayImage').parentElement.style.display = 'none';
-            }
+            // Overlay image no longer displayed (only fitted AuNRs shown)
 
             // Download Link
             // Download Link
@@ -529,8 +613,15 @@
             // Calibration
 
             // Calibration
-            if (data.pixel_size_nm) {
+            if (currentIsPlaceholderCalibration) {
+                document.getElementById('pixelSize').textContent = 'N/A';
+                document.getElementById('pixelSizeUnit').textContent = '';
+            } else if (data.pixel_size_nm) {
                 document.getElementById('pixelSize').textContent = data.pixel_size_nm.toFixed(4);
+                document.getElementById('pixelSizeUnit').textContent = ' nm/px';
+            } else {
+                document.getElementById('pixelSize').textContent = '-';
+                document.getElementById('pixelSizeUnit').textContent = ' nm/px';
             }
 
             // Update calibration info
@@ -541,6 +632,10 @@
                 calibText = `Linked: ${data.calibration_info.source_file}`;
             }
             document.getElementById('calibrationMethod').textContent = calibText;
+            updateMeasurementUnits();
+
+            // Show calibration panel if needed
+            showCalibrationPanel(data.calibration_info);
 
             // Restore Selection from LocalStorage (Cache)
             const excludedIds = JSON.parse(localStorage.getItem('excluded_' + imageId) || '[]');
@@ -567,6 +662,19 @@
 
             // Automatically Calculate to show graphs immediately
             calculateAnalysis(true);
+        }
+
+        function updateMeasurementUnits() {
+            const unit = currentIsPlaceholderCalibration ? 'px' : 'nm';
+            document.getElementById('lengthHeader').textContent = `L (${unit})`;
+            document.getElementById('widthHeader').textContent = `W (${unit})`;
+            document.getElementById('meanLengthLabel').textContent = `Mean L (${unit})`;
+            document.getElementById('meanWidthLabel').textContent = `Mean W (${unit})`;
+        }
+
+        function toggleCalibrationPanel() {
+            calibrationPanelOpen = !calibrationPanelOpen;
+            showCalibrationPanel(currentCalibrationInfo);
         }
 
         function toggleAll(source) {
@@ -625,8 +733,9 @@
                 document.getElementById('meanAR').textContent = meanAR.toFixed(1) + ' ± ' + stdAR.toFixed(1);
 
                 // Update Charts
-                lengthChartInstance = createHistogram('lengthChart', 'Length Distribution (nm)', lengths, lengthChartInstance);
-                widthChartInstance = createHistogram('widthChart', 'Width Distribution (nm)', widths, widthChartInstance);
+                const unit = currentIsPlaceholderCalibration ? 'px' : 'nm';
+                lengthChartInstance = createHistogram('lengthChart', `Length Distribution (${unit})`, lengths, lengthChartInstance);
+                widthChartInstance = createHistogram('widthChart', `Width Distribution (${unit})`, widths, widthChartInstance);
 
             } else {
                 document.getElementById('count').textContent = "0";
@@ -653,20 +762,19 @@
 
             if (!data || data.length === 0) return null;
 
-            // Simple binning
-            const binCount = 10;
+            // Denser binning - use Sturges' rule or at least 20 bins
+            const binCount = Math.max(20, Math.ceil(1 + 3.322 * Math.log10(data.length)));
             const min = Math.min(...data);
             const max = Math.max(...data);
 
-            // Handle case where min == max (single value or all same)
             let step = (max - min) / binCount;
             if (step === 0) step = 1;
 
             const bins = new Array(binCount).fill(0);
-            const labels = [];
+            const binCenters = [];
 
             for (let i = 0; i < binCount; i++) {
-                labels.push((min + i * step).toFixed(1) + '-' + (min + (i + 1) * step).toFixed(1));
+                binCenters.push((min + (i + 0.5) * step).toFixed(1));
             }
 
             data.forEach(val => {
@@ -674,23 +782,59 @@
                 bins[binIndex]++;
             });
 
+            // Compute Gaussian fit
+            const mean = data.reduce((a, b) => a + b, 0) / data.length;
+            const variance = data.reduce((a, b) => a + (b - mean) ** 2, 0) / data.length;
+            const stdDev = Math.sqrt(variance);
+            const amplitude = Math.max(...bins);
+
+            const gaussianY = binCenters.map(x => {
+                const xVal = parseFloat(x);
+                if (stdDev === 0) return 0;
+                return amplitude * Math.exp(-0.5 * ((xVal - mean) / stdDev) ** 2);
+            });
+
             return new Chart(ctx, {
                 type: 'bar',
                 data: {
-                    labels: labels,
+                    labels: binCenters,
                     datasets: [{
                         label: label,
                         data: bins,
                         backgroundColor: 'rgba(54, 162, 235, 0.5)',
                         borderColor: 'rgba(54, 162, 235, 1)',
-                        borderWidth: 1
+                        borderWidth: 1,
+                        barPercentage: 1.0,
+                        categoryPercentage: 1.0,
+                        order: 2
+                    }, {
+                        label: 'Gaussian Fit',
+                        data: gaussianY,
+                        type: 'line',
+                        borderColor: 'rgba(255, 99, 132, 1)',
+                        borderWidth: 2,
+                        pointRadius: 0,
+                        fill: false,
+                        tension: 0.4,
+                        order: 1
                     }]
                 },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
                     scales: {
+                        x: {
+                            ticks: {
+                                maxTicksLimit: 10,
+                                maxRotation: 45
+                            }
+                        },
                         y: { beginAtZero: true }
+                    },
+                    plugins: {
+                        legend: {
+                            labels: { font: { size: 11 } }
+                        }
                     }
                 }
             });
@@ -918,24 +1062,19 @@
             title.style.marginBottom = '20px';
             pdfContainer.appendChild(title);
 
-            // Add Images (Resized for PDF)
+            // Add Fitted AuNRs image (Resized for PDF)
             const imgContainer = document.createElement('div');
             imgContainer.style.display = 'flex';
             imgContainer.style.justifyContent = 'center';
-            imgContainer.style.gap = '20px';
             imgContainer.style.marginBottom = '20px';
-            imgContainer.style.height = '300px';
+            imgContainer.style.height = '350px';
 
-            const img1 = document.getElementById('overlayImage').cloneNode(true);
             const img2 = document.getElementById('processedImage').cloneNode(true);
-
-            [img1, img2].forEach(img => {
-                img.style.maxHeight = '100%';
-                img.style.maxWidth = '45%';
-                img.style.objectFit = 'contain';
-                img.style.transform = 'none'; // reset zoom
-                imgContainer.appendChild(img);
-            });
+            img2.style.maxHeight = '100%';
+            img2.style.maxWidth = '80%';
+            img2.style.objectFit = 'contain';
+            img2.style.transform = 'none';
+            imgContainer.appendChild(img2);
             pdfContainer.appendChild(imgContainer);
 
             // Clone Results Section
@@ -978,6 +1117,221 @@
             };
 
             html2pdf().set(opt).from(pdfContainer).save();
+        }
+
+        // --- Click on particle to toggle checkbox ---
+        document.getElementById('processedImage').addEventListener('click', function(e) {
+            if (isZoomActive || isDrawingLine) return;
+            if (!currentData || currentData.length === 0) return;
+
+            const img = this;
+            const rect = img.getBoundingClientRect();
+            const scaleX = img.naturalWidth / rect.width;
+            const scaleY = img.naturalHeight / rect.height;
+            const clickX = (e.clientX - rect.left) * scaleX;
+            const clickY = (e.clientY - rect.top) * scaleY;
+
+            // Find nearest particle centroid
+            let minDist = Infinity;
+            let nearestIdx = -1;
+            currentData.forEach((rod, idx) => {
+                const dx = rod.centroid_x - clickX;
+                const dy = rod.centroid_y - clickY;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                if (dist < minDist) {
+                    minDist = dist;
+                    nearestIdx = idx;
+                }
+            });
+
+            // Only toggle if click is reasonably close (within 50px of actual image coords)
+            if (nearestIdx >= 0 && minDist < 80) {
+                const checkboxes = document.querySelectorAll('.rod-checkbox');
+                if (checkboxes[nearestIdx]) {
+                    checkboxes[nearestIdx].checked = !checkboxes[nearestIdx].checked;
+                    // Flash the table row briefly
+                    const row = checkboxes[nearestIdx].closest('tr');
+                    row.style.background = checkboxes[nearestIdx].checked ? '#d4edda' : '#f8d7da';
+                    setTimeout(() => { row.style.background = ''; }, 600);
+                }
+            }
+        });
+
+        // --- Scale Bar Calibration ---
+        let isDrawingLine = false;
+        let lineStart = null;
+        let lineEnd = null;
+        let drawnLinePx = 0;
+        const scaleCanvas = document.getElementById('scaleCanvas');
+        const scaleCtx = scaleCanvas.getContext('2d');
+
+        function syncScaleCanvasToImage() {
+            const img = document.getElementById('processedImage');
+            if (!img || !img.naturalWidth || !img.naturalHeight) return false;
+
+            scaleCanvas.width = img.naturalWidth;
+            scaleCanvas.height = img.naturalHeight;
+            scaleCanvas.style.width = `${img.clientWidth}px`;
+            scaleCanvas.style.height = `${img.clientHeight}px`;
+            scaleCanvas.style.left = `${img.offsetLeft}px`;
+            scaleCanvas.style.top = `${img.offsetTop}px`;
+            return true;
+        }
+
+        function showCalibrationPanel(calibInfo) {
+            const method = calibInfo ? calibInfo.method : 'default';
+            const needsCalibration = method === 'default' || method === 'uncalibrated' || (calibInfo && calibInfo.is_placeholder);
+            const panel = document.getElementById('calibrationPanel');
+            const toggleBtn = document.getElementById('toggleCalibrationBtn');
+            const title = document.getElementById('calibrationPanelTitle');
+            const note = document.getElementById('calibrationPanelNote');
+
+            if (needsCalibration) {
+                calibrationPanelOpen = true;
+                title.textContent = 'Scale Bar Calibration Required';
+                note.textContent = 'No reliable scale was found. Please set the scale manually or try auto-detect.';
+                toggleBtn.textContent = 'Hide calibration tools';
+            } else {
+                title.textContent = 'Scale Calibration';
+                note.textContent = 'Current calibration looks usable. You can re-scale this image at any time if needed.';
+                toggleBtn.textContent = calibrationPanelOpen ? 'Hide re-scale tools' : 'Re-scale';
+            }
+
+            panel.style.display = calibrationPanelOpen ? 'block' : 'none';
+        }
+
+        function startDrawLine() {
+            isDrawingLine = true;
+            lineStart = null;
+            lineEnd = null;
+            drawnLinePx = 0;
+
+            // Disable zoom while drawing
+            if (isZoomActive) toggleZoom();
+
+            if (!syncScaleCanvasToImage()) {
+                alert('Image is still loading. Please try again in a moment.');
+                isDrawingLine = false;
+                return;
+            }
+            scaleCanvas.style.display = 'block';
+            scaleCtx.clearRect(0, 0, scaleCanvas.width, scaleCanvas.height);
+
+            document.getElementById('drawLineBtn').classList.add('cal-active');
+            document.getElementById('drawLineBtn').textContent = 'Drawing... Click start & end points';
+            document.getElementById('lineStatus').textContent = '';
+        }
+
+        scaleCanvas.addEventListener('mousedown', function(e) {
+            if (!isDrawingLine) return;
+            const rect = scaleCanvas.getBoundingClientRect();
+            const scaleX = scaleCanvas.width / rect.width;
+            const scaleY = scaleCanvas.height / rect.height;
+            const x = (e.clientX - rect.left) * scaleX;
+            const y = (e.clientY - rect.top) * scaleY;
+
+            if (!lineStart) {
+                lineStart = { x, y };
+                // Draw start point
+                scaleCtx.clearRect(0, 0, scaleCanvas.width, scaleCanvas.height);
+                scaleCtx.fillStyle = 'lime';
+                scaleCtx.beginPath();
+                scaleCtx.arc(x, y, 6, 0, Math.PI * 2);
+                scaleCtx.fill();
+            } else {
+                lineEnd = { x, y };
+                // Draw line
+                scaleCtx.clearRect(0, 0, scaleCanvas.width, scaleCanvas.height);
+                scaleCtx.strokeStyle = 'lime';
+                scaleCtx.lineWidth = 3;
+                scaleCtx.beginPath();
+                scaleCtx.moveTo(lineStart.x, lineStart.y);
+                scaleCtx.lineTo(lineEnd.x, lineEnd.y);
+                scaleCtx.stroke();
+
+                drawnLinePx = Math.sqrt(
+                    Math.pow(lineEnd.x - lineStart.x, 2) +
+                    Math.pow(lineEnd.y - lineStart.y, 2)
+                );
+
+                isDrawingLine = false;
+                document.getElementById('drawLineBtn').classList.remove('cal-active');
+                document.getElementById('drawLineBtn').textContent = 'Draw Line on Image';
+                document.getElementById('lineStatus').textContent = `Line: ${Math.round(drawnLinePx)} px`;
+            }
+        });
+
+        scaleCanvas.addEventListener('mousemove', function(e) {
+            if (!isDrawingLine || !lineStart) return;
+            const rect = scaleCanvas.getBoundingClientRect();
+            const scaleX = scaleCanvas.width / rect.width;
+            const scaleY = scaleCanvas.height / rect.height;
+            const x = (e.clientX - rect.left) * scaleX;
+            const y = (e.clientY - rect.top) * scaleY;
+
+            scaleCtx.clearRect(0, 0, scaleCanvas.width, scaleCanvas.height);
+            scaleCtx.strokeStyle = 'lime';
+            scaleCtx.lineWidth = 3;
+            scaleCtx.beginPath();
+            scaleCtx.moveTo(lineStart.x, lineStart.y);
+            scaleCtx.lineTo(x, y);
+            scaleCtx.stroke();
+        });
+
+        async function applyManualScale() {
+            const nmValue = parseFloat(document.getElementById('scaleNmInput').value);
+            if (!nmValue || nmValue <= 0) {
+                alert('Please enter a valid nm value.');
+                return;
+            }
+            if (drawnLinePx <= 0) {
+                alert('Please draw a line on the scale bar first.');
+                return;
+            }
+
+            const pixelSize = nmValue / drawnLinePx;
+
+            // Hide canvas
+            scaleCanvas.style.display = 'none';
+            scaleCtx.clearRect(0, 0, scaleCanvas.width, scaleCanvas.height);
+
+            // Reprocess with manual pixel size
+            document.getElementById('lineStatus').textContent = 'Reprocessing...';
+            try {
+                const response = await fetch(`/process/${imageId}?manual_pixel_size=${pixelSize}`, { method: 'POST' });
+                const data = await response.json();
+                if (response.ok) {
+                    displayResults(data);
+                } else {
+                    alert('Error: ' + (data.detail || 'Processing failed'));
+                }
+            } catch (e) {
+                alert('Error reprocessing: ' + e.message);
+            }
+        }
+
+        window.addEventListener('resize', function() {
+            if (scaleCanvas.style.display === 'block') {
+                syncScaleCanvasToImage();
+            }
+        });
+
+        async function autoDetectScale() {
+            document.getElementById('autoDetectStatus').textContent = 'Detecting...';
+            try {
+                const response = await fetch(`/process/${imageId}?force_reprocess=true`, { method: 'POST' });
+                const data = await response.json();
+                if (response.ok) {
+                    if (data.calibration_info && !data.calibration_info.is_placeholder && data.calibration_info.method !== 'default' && data.calibration_info.method !== 'uncalibrated') {
+                        document.getElementById('autoDetectStatus').textContent = 'Detected! Reloading...';
+                        displayResults(data);
+                    } else {
+                        document.getElementById('autoDetectStatus').textContent = 'Could not detect scale bar. Try manual.';
+                    }
+                }
+            } catch (e) {
+                document.getElementById('autoDetectStatus').textContent = 'Detection failed.';
+            }
         }
 
         processImage();

@@ -21,47 +21,45 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
-            /* Space out logo and info */
             background: white;
-            padding: 20px;
-            border-radius: 12px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
-            margin-bottom: 30px;
-            gap: 30px;
+            padding: 8px 16px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+            margin-bottom: 20px;
+            gap: 12px;
         }
 
         .header-logo {
-            width: 270px;
-            /* Quarter of original 800px */
+            width: 108px;
             height: auto;
-            border-radius: 8px;
+            border-radius: 4px;
             object-fit: contain;
         }
 
         .header-title h1 {
             margin: 0;
-            font-size: 32px;
+            font-size: 16px;
             color: #333;
         }
 
         .header-title p {
-            margin: 5px 0 0;
+            margin: 2px 0 0;
             color: #666;
-            font-size: 16px;
+            font-size: 11px;
         }
 
         .about-btn {
             background: #f8f9fa;
             border: 1px solid #ddd;
-            width: 40px;
-            height: 40px;
+            width: 28px;
+            height: 28px;
             border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
             cursor: pointer;
             color: #666;
-            font-size: 20px;
+            font-size: 14px;
             transition: all 0.2s;
         }
 
@@ -367,7 +365,7 @@
 
     <!-- Header -->
     <div class="app-header">
-        <div style="display: flex; align-items: center; gap: 30px;">
+        <div style="display: flex; align-items: center; gap: 12px;">
             <img src="/static/assets/headers/header_default.png" alt="Logo" class="header-logo" id="appHeaderImage">
             <div class="header-title">
                 <h1>Nanorod Detector 2.0</h1>
@@ -450,13 +448,17 @@
             <div class="upload-section">
                 <h3>Upload Images</h3>
 
-                <p style="color: red; margin-bottom: 20px; font-weight: bold;">
-                    Both .tiff image and .dm3 file with <u style="text-decoration-thickness: 2px;">the same name</u>
-                    required for analysis
+                <p style="color: #555; margin-bottom: 10px; font-size: 14px;">
+                    Supported image formats: <strong>TIFF, PNG, JPG</strong><br>
+                    Supported metadata formats: <strong>.dm3, .dm4, .emd</strong>
+                </p>
+                <p style="color: #888; margin-bottom: 20px; font-size: 12px;">
+                    Auto scale bar: <strong>.dm3/.dm4/.emd</strong> (from metadata) &amp; <strong>TIFF</strong> (ImageJ metadata).<br>
+                    For PNG/JPG without metadata, manual or OCR-based scale bar calibration is available in the analysis page.
                 </p>
                 <button class="btn btn-outline" onclick="document.getElementById('fileInput').click()">Choose
                     Files</button>
-                <input type="file" id="fileInput" multiple accept=".tif,.tiff,.jpg,.png,.dm3,.dm4"
+                <input type="file" id="fileInput" multiple accept=".tif,.tiff,.jpg,.jpeg,.png,.dm3,.dm4,.emd"
                     style="display: none;" onchange="handleUpload(this.files)">
             </div>
 
@@ -466,14 +468,16 @@
                     <button class="modal-close" onclick="closeUploadHelp(event)">×</button>
                     <div class="modal-section">
                         <h3>Upload Instructions</h3>
-                        <p>You can identify and upload <strong>multiple images</strong> at once.</p>
-                        <p>However, to ensure accurate pixel-to-nanometer scaling, the system requires:</p>
+                        <p>You can upload <strong>multiple images</strong> at once.</p>
+                        <p><strong>Supported image formats:</strong> TIFF (.tif/.tiff), PNG, JPG/JPEG</p>
+                        <p><strong>Supported metadata formats:</strong> .dm3, .dm4, .emd</p>
+                        <p><strong>Scale bar calibration:</strong></p>
                         <ul>
-                            <li>The raw image file (e.g., <code>image_01.tif</code>)</li>
-                            <li>The metadata file (e.g., <code>image_01.dm3</code>)</li>
+                            <li><strong>.dm3/.dm4/.emd:</strong> Pixel size read automatically from metadata</li>
+                            <li><strong>TIFF (ImageJ):</strong> Pixel size read from ImageJ metadata if available</li>
+                            <li><strong>PNG/JPG (or TIFF without metadata):</strong> OCR auto-detection of scale bar, or manual calibration in the analysis page</li>
                         </ul>
-                        <p><strong>Crucial:</strong> These files must share <u>exactly the same filename</u> (ignoring
-                            the extension).</p>
+                        <p>If you have a separate metadata file (.dm3/.dm4/.emd), upload it with the <strong>same filename</strong> as the image for auto-linking.</p>
 
                         <div
                             style="background-color: #fff3cd; color: #856404; padding: 10px; border-radius: 5px; margin-top: 15px; border: 1px solid #ffeeba;">
@@ -643,10 +647,27 @@
                     gallery.innerHTML = '<div style="grid-column: 1/-1; text-align: center; color: #888;">No images uploaded yet.</div>';
                 }
 
+                // Build a set of image stems to detect metadata-only companion files
+                const imageStems = new Set();
+                const metaExts = ['.dm3', '.dm4', '.emd'];
+                const imageExts = ['.tif', '.tiff', '.jpg', '.jpeg', '.png'];
                 images.forEach(img => {
-                    // Filter Gatan files from view
+                    const name = (img.display_name || img.filename).toLowerCase();
+                    if (imageExts.some(ext => name.endsWith(ext))) {
+                        const stem = name.substring(0, name.lastIndexOf('.'));
+                        imageStems.add(stem);
+                    }
+                });
+
+                images.forEach(img => {
                     const name = img.display_name || img.filename;
-                    if (name.toLowerCase().endsWith('.dm3') || name.toLowerCase().endsWith('.dm4')) return;
+                    const nameLower = name.toLowerCase();
+                    // Only hide dm3/dm4/emd files that are metadata companions
+                    // (i.e., a matching .tif/.jpg/.png exists with the same stem)
+                    if (metaExts.some(ext => nameLower.endsWith(ext))) {
+                        const stem = nameLower.substring(0, nameLower.lastIndexOf('.'));
+                        if (imageStems.has(stem)) return; // metadata companion, hide it
+                    }
 
                     const isProcessing = img.status === 'processing';
                     if (isProcessing) hasProcessing = true;

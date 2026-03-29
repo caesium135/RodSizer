@@ -10,44 +10,36 @@ def image_kmeans(image, k=2):
     Segments the image using K-means clustering.
     Matches MATLAB 'imagekmeans.m' and 'loadEMimages.m' logic.
     """
-    # 1. Preprocessing (from loadEMimages.m)
-    # image_8bit = imadjust(image_8bit); -> Contrast Stretching
-    # Rescale intensity to stretch 1% and 99% percentiles to 0-255
+    # 1. Preprocessing — Contrast Stretching
     p1, p99 = np.percentile(image, (1, 99))
     image_adj = exposure.rescale_intensity(image, in_range=(p1, p99), out_range=np.uint8)
-    
-    # 2. Inversion (from imagekmeans.m)
-    # image_I = 255 - image_8bit;
-    image_inv = util.invert(image_adj)
-    
-    # 3. Clear Border
-    # ContI = imclearborder(image_I);
-    # Note: MATLAB does this BEFORE K-means on grayscale? 
-    # Yes, 'imclearborder(image_I)' where image_I is grayscale?
-    # MATLAB imclearborder works on grayscale by suppressing intensity of light structures connected to border.
-    # Since particles are Bright (inverted), this removes border particles.
-    image_clr = segmentation.clear_border(image_inv)
-    
-    # 4. K-means
-    # L = imsegkmeans(ContI, 2);
-    data = image_clr.reshape((-1, 1)).astype(np.float32)
+
+    # 2. K-means clustering (k=2: foreground vs background)
+    data = image_adj.reshape((-1, 1)).astype(np.float32)
     criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 10, 1.0)
     flags = cv2.KMEANS_RANDOM_CENTERS
     compactness, labels, centers = cv2.kmeans(data, k, None, criteria, 10, flags)
     segmented_image = labels.reshape(image.shape)
-    
-    # 5. Foreground Selection
-    # if mean(ContI(L==1)) > mean(ContI(L==2)): BW(L==1)=true
-    # Foreground is BRIGHTER (since inverted)
-    mean_0 = np.mean(image_clr[segmented_image == 0])
-    mean_1 = np.mean(image_clr[segmented_image == 1])
-    
-    if mean_0 > mean_1:
-         binary = (segmented_image == 0)
-    else:
-         binary = (segmented_image == 1)
-         
-    # 6. Post-processing (Morphology chain from imagekmeans.m)
+
+    # 3. Foreground Selection — border-pixel voting
+    # Border pixels are almost always background in microscopy images.
+    # The cluster that dominates the border is background; the other is foreground.
+    # This works for BOTH black-bg (bright particles) and white-bg (dark particles).
+    h, w = image_adj.shape[:2]
+    border_labels = np.concatenate([
+        segmented_image[0, :],        # top row
+        segmented_image[h-1, :],      # bottom row
+        segmented_image[1:h-1, 0],    # left column
+        segmented_image[1:h-1, w-1]   # right column
+    ])
+    # Majority vote: which cluster appears more on the border?
+    bg_cluster = int(np.round(np.mean(border_labels)))
+    fg_cluster = 1 - bg_cluster
+
+    binary = (segmented_image == fg_cluster)
+
+    # 4. Post-processing (Morphology chain from imagekmeans.m)
+    # NOTE: Border objects are filtered per-particle in processing.py, not here
     # BW_fill_filter = imfill(BW,4,'holes');
     binary = ndi.binary_fill_holes(binary)
     
