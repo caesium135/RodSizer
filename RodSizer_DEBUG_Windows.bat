@@ -3,7 +3,7 @@ cd /d "%~dp0"
 setlocal enabledelayedexpansion
 
 echo ==================================================
-echo       Nanorod Detector 2.0 - DEBUG & REPAIR
+echo       RodSizer - DEBUG & REPAIR
 echo ==================================================
 echo.
 

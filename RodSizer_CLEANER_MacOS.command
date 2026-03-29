@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-#  WARNING — Gold Nanorod Detector 2.0 — Clear All Local History Data (Mac)
+#  WARNING — RodSizer — Clear All Local History Data (Mac)
 #  Double-click this file in Finder only if you want to delete local history.
 # =============================================================================
 

@@ -18,7 +18,7 @@ class ExportRequest(BaseModel):
     image_id: str
     selected_ids: List[int]
     
-app = FastAPI(title="Gold Nanorod Detector")
+app = FastAPI(title="RodSizer")
 
 
 # Configure CORS

@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-#  Gold Nanorod Detector 2.0 — Mac Launcher
+#  RodSizer — Mac Launcher
 #  Double-click this file in Finder to start the app.
 # =============================================================================
 
@@ -17,7 +17,7 @@ warn()  { echo -e "${YELLOW}[!]${NC} $*"; }
 error() { echo -e "${RED}[✗]${NC} $*"; }
 step()  { echo -e "\n${CYAN}──────────────────────────────────────────${NC}"; echo -e "${CYAN}  $*${NC}"; echo -e "${CYAN}──────────────────────────────────────────${NC}"; }
 
-step "Gold Nanorod Detector 2.0 — Starting up"
+step "RodSizer — Starting up"
 
 # ── Detect CPU architecture ───────────────────────────────────────────────────
 ARCH=$(uname -m)
@@ -171,7 +171,7 @@ if ! python -c "import fastapi" &>/dev/null 2>&1; then
     fi
 
     # ── Remaining packages (numpy version is now fixed by TF above) ─────────────
-    TMP_REQ=$(mktemp /tmp/nanorod_req_XXXX.txt)
+    TMP_REQ=$(mktemp /tmp/rodsizer_req_XXXX.txt)
     grep -v "^tensorflow" "$BACKEND_DIR/requirements.txt" > "$TMP_REQ"
 
     if ! pip install -r "$TMP_REQ" --quiet; then
@@ -239,7 +239,7 @@ open http://127.0.0.1:8000
 
 echo ""
 echo -e "${GREEN}════════════════════════════════════════════${NC}"
-echo -e "${GREEN}  Gold Nanorod Detector 2.0 is ready!${NC}"
+echo -e "${GREEN}  RodSizer is ready!${NC}"
 echo -e "${GREEN}  URL: http://127.0.0.1:8000${NC}"
 echo -e "${GREEN}════════════════════════════════════════════${NC}"
 echo ""

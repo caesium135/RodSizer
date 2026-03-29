@@ -1,43 +1,83 @@
-# Nanorod Detection Parameter Guide
+# RodSizer Parameter Guide
 
-This guide details the key parameters used in the detection algorithm and their recommended values for different scenarios.
+This guide explains the main processing parameters that are currently active in RodSizer.
 
-## Current Settings (AutoDetect-mNP)
+## Current Detection Flow
 
-We are using the **AutoDetect-mNP** algorithm (Wang et al.):
-1.  **K-means Segmentation**: Robustly separates foreground/background using clustering.
-2.  **rUECS (Recursive Erosion)**: Intelligently splits clumps by eroding them until they break into convex parts, then growing them back.
+The current backend uses an AutoDetect-mNP-style workflow in `backend/processing.py`:
 
-| Parameter | Status | Description |
+1. `K-means segmentation` separates foreground particles from background.
+2. `Scale bar masking` removes the scale bar area so it is not detected as a particle.
+3. `Solidity-based split logic` decides whether an object is treated as a single particle or sent to `rUECS` for clump splitting.
+4. `Measurement` uses `minAreaRect` to estimate rod length and width.
+5. `Post-analysis clustering` uses aspect ratio, solidity, and circularity for class-colored overlay grouping.
+
+## Parameters Currently In Use
+
+| Parameter | Current Value / Behavior | What it does |
 | :--- | :--- | :--- |
-| **Segmentation** | `K-means + rUECS` | Clustering + Recursive Erosion for clumps. |
-| **Aspect Ratio** | `Disabled` | Fitting all detected objects. |
-| **Solidity** | `Disabled` | Fitting all detected objects. |
-| **Containment** | `Disabled` | Fitting all detected objects. |
+| `requested_bar_length_nm` | `200.0` nm default | Draws a synthetic blue scale bar if a real calibration is available and no override is given. |
+| `manual_pixel_size` | Optional user override | Replaces metadata-based calibration when supplied. |
+| `min_area_nm2` | `30` nm^2 | Rejects very small objects as noise before and after segmentation. |
+| `region.solidity > 0.9` | Active | Treats highly convex objects as simple particles; lower-solidity objects are treated as clumps and split with `rUECS`. |
+| Overlap threshold | `0.15` | Used during non-maximum suppression to skip heavily overlapping duplicate detections. |
+| K-means classes | Up to `4` groups | Groups detected particles for the colored overlay using aspect ratio, solidity, and circularity. |
 
-**Note**: Manual parameters like `Separation`, `Closing`, and `Threshold` are no longer used.
+## Measurement and Descriptor Outputs
 
-## Parameter Effects
+These values are computed for each accepted particle:
 
-### 1. Aspect Ratio (`aspect_ratio_px`)
-- **What it does**: Filters out objects that are too round (spheres).
-- **Increase (e.g., 2.0)**: Only detects very long, thin rods.
-- **Decrease (e.g., 1.1)**: Detects almost everything, including spheres and impurities.
+- `length_nm`
+- `width_nm`
+- `aspect_ratio`
+- `volume_nm3`
+- `orientation_deg`
+- `area_px`
+- `solidity`
+- `convexity`
+- `circularity`
+- `eccentricity`
 
-### 2. Solidity (`solidity`)
-- **What it does**: Checks how "solid" the object is compared to a perfect ellipse.
-- **Increase (e.g., 0.9)**: Only detects perfect, smooth ellipses.
-- **Decrease (e.g., 0.5)**: Accepts very jagged or distorted shapes.
+Important: in the current code, `aspect_ratio`, `solidity`, and `circularity` are mainly measurement/classification descriptors. They are not user-facing manual filter knobs in the current workflow.
 
-### 3. Separation Distance (`target_dist_nm`)
-- **What it does**: Controls how far apart two rod centers must be to be counted as separate objects.
-- **Increase (e.g., 20nm)**: Prevents splitting a single rod into two, but might merge touching rods.
-- **Decrease (e.g., 5nm)**: Separates touching rods well, but might split a single rod into multiple pieces.
+## Parameters No Longer Used As Manual Controls
 
-### 4. Morphological Closing (`closing_radius_nm`)
-- **What it does**: Connects fragmented parts of a rod.
-- **Current**: `1.0 nm` (Conservative).
-- **Note**: Increasing this too much (>3nm) can cause rods to merge together.
+The following items described in older documentation are not active as manual tuning parameters in the current `process_image` workflow:
 
-## How to Adjust
-To adjust these parameters, modify the variables at the top of the `process_image` function in `backend/processing.py`.
+- `target_dist_nm`
+- `closing_radius_nm`
+- manual threshold controls such as `Threshold`
+- older separation/closing sliders or variables
+- `aspect_ratio_px` as a direct hard filter
+- `containment` as a direct hard filter
+
+## Practical Effect of the Active Parameters
+
+### 1. Minimum Area (`min_area_nm2`)
+- Removes tiny specks, dirt, and segmentation noise.
+- Increasing it makes detection more conservative.
+- Decreasing it allows smaller objects through, but may increase false positives.
+
+### 2. Solidity Split Threshold (`region.solidity > 0.9`)
+- High-solidity objects are treated as single particles.
+- Lower-solidity objects are assumed to be clumps or irregular shapes and are sent to `rUECS`.
+- Increasing this threshold makes the app split more borderline shapes as clumps.
+- Decreasing this threshold makes the app keep more irregular shapes as single objects.
+
+### 3. Manual Pixel Size (`manual_pixel_size`)
+- Overrides image metadata calibration.
+- Useful when metadata is missing or incorrect.
+- A wrong value will directly affect all reported dimensions in nanometers.
+
+### 4. Requested Scale Bar Length (`requested_bar_length_nm`)
+- Controls the displayed synthetic scale bar length.
+- Default is `200 nm`.
+- This affects the visualization scale bar, not particle detection itself.
+
+## Where To Adjust These Parameters
+
+If you want to change the current defaults, look in:
+
+- [backend/processing.py](/Users/shichen/Documents/GitHub/RodSizer/backend/processing.py)
+
+The main place to inspect is the `process_image(...)` function.
