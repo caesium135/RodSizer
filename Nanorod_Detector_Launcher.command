@@ -61,29 +61,13 @@ fi
 info "Homebrew: $(brew --version | head -1)"
 
 # =============================================================================
-# STEP 2 — Tesseract (OCR engine needed by pytesseract)
-# =============================================================================
-step "Step 2/5: Checking Tesseract"
-
-if ! command -v tesseract &>/dev/null; then
-    warn "Tesseract not found. Installing via Homebrew..."
-    brew install tesseract
-fi
-
-if ! command -v tesseract &>/dev/null; then
-    error "Tesseract could not be installed. Please run:  brew install tesseract"
-    echo "Press Enter to close..."; read -r; exit 1
-fi
-info "Tesseract: $(tesseract --version 2>&1 | head -1)"
-
-# =============================================================================
-# STEP 3 — Python 3.11
+# STEP 2 — Python 3.11
 #
 #  TensorFlow 2.x officially supports Python 3.8–3.11.
 #  Python 3.12+ does NOT have stable TensorFlow wheels yet.
 #  We therefore require Python 3.11 specifically.
 # =============================================================================
-step "Step 3/5: Checking Python 3.11"
+step "Step 2/4: Checking Python 3.11"
 
 PYTHON_CMD=""
 
@@ -143,9 +127,9 @@ PYTHON_VER=$("$PYTHON_CMD" -c "import sys; print(f'{sys.version_info.major}.{sys
 info "Using Python $PYTHON_VER at: $PYTHON_CMD"
 
 # =============================================================================
-# STEP 4 — Virtual environment & Python dependencies
+# STEP 3 — Virtual environment & Python dependencies
 # =============================================================================
-step "Step 4/5: Setting up Python environment"
+step "Step 3/4: Setting up Python environment"
 
 # Create venv if it does not exist
 if [ ! -d "$VENV_DIR" ]; then
@@ -215,9 +199,9 @@ else
 fi
 
 # =============================================================================
-# STEP 5 — Launch server & open browser
+# STEP 4 — Launch server & open browser
 # =============================================================================
-step "Step 5/5: Starting server"
+step "Step 4/4: Starting server"
 
 # Kill any leftover process on port 8000
 if lsof -ti:8000 &>/dev/null; then

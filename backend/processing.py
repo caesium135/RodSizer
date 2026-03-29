@@ -189,7 +189,7 @@ def process_image(image_path: Path, output_dir: Path, manual_pixel_size: float =
         pixel_size_nm = manual_pixel_size
         calibration_info = {"method": "manual", "scale_bar_length_nm": "Manual"}
     elif pixel_size_nm is None:
-        # Try getting from utils (TIFF tags or OCR)
+        # Try getting from utils (embedded metadata where available)
         pixel_size_nm, calibration_info = get_pixel_size(image_path)
     
     # Ensure pixel_size_nm is valid

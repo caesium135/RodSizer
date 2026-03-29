@@ -195,41 +195,6 @@
 </head>
 
 <body>
-    <!-- Header -->
-    <div class="app-header"
-        style="display: flex; align-items: center; justify-content: space-between; background: white; padding: 8px 16px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); margin-bottom: 12px; max-width: 1200px; margin: 0 auto 12px auto;">
-        <div style="display: flex; align-items: center; gap: 12px;">
-            <img src="/static/assets/headers/header_default.png" alt="Logo"
-                style="width: 108px; height: auto; border-radius: 4px; object-fit: contain;" id="appHeaderImage">
-            <div>
-                <h1 style="margin: 0; font-size: 16px; color: #333; text-align: left;">Nanorod Detector 2.0</h1>
-                <p style="margin: 2px 0 0; color: #666; font-size: 11px;">Detects, sizes, and analyzes gold nanorods.
-                </p>
-            </div>
-        </div>
-    </div>
-
-    <script>
-        const HEADER_IMAGES = [
-            'header_1.png', 'header_2.png', 'header_3.png', 'header_4.png',
-            'header_5.png', 'header_6.png', 'header_7.png', 'header_8.png',
-            'header_9.png', 'header_default.png'
-        ];
-
-        function randomizeHeader() {
-            const imgElement = document.getElementById('appHeaderImage');
-            if (!imgElement) return;
-
-            if (!sessionStorage.getItem('app_booted')) {
-                sessionStorage.setItem('app_booted', 'true');
-                imgElement.src = '/static/assets/headers/header_default.png';
-            } else {
-                const randomImage = HEADER_IMAGES[Math.floor(Math.random() * HEADER_IMAGES.length)];
-                imgElement.src = '/static/assets/headers/' + randomImage;
-            }
-        }
-        randomizeHeader();
-    </script>
 
     <div class="container">
         <div class="container">

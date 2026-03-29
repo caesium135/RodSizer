@@ -4,9 +4,7 @@ import ncempy.io as nio
 import tifffile
 import cv2
 import numpy as np
-import pytesseract
 import re
-from PIL import Image
 import h5py
 import xml.etree.ElementTree as ET
 
@@ -439,64 +437,6 @@ def get_pixel_size(image_path: Path):
         print(f"Error extracting metadata: {e}")
         import traceback
         traceback.print_exc()
-
-    # 2. Fallback: Scale Bar Detection (OCR + Line Detection)
-    detected_pixel_size = None
-    try:
-        if ext == '.emd':
-            img = read_emd_image(image_path)
-        else:
-            img = cv2.imread(str(image_path), cv2.IMREAD_GRAYSCALE)
-        if img is not None:
-            h, w = img.shape
-
-            # Scale bars are usually at the bottom
-            bottom_crop = img[int(h * 0.8):, :]
-
-            # Try both white-on-dark and dark-on-white scale bars
-            _, thresh_white = cv2.threshold(bottom_crop, 200, 255, cv2.THRESH_BINARY)
-            _, thresh_dark = cv2.threshold(bottom_crop, 50, 255, cv2.THRESH_BINARY_INV)
-
-            for thresh in [thresh_white, thresh_dark]:
-                contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-                best_line_width_px = 0
-                best_line_rect = None
-
-                for cnt in contours:
-                    x, y, cw, ch = cv2.boundingRect(cnt)
-                    # Scale bar line is usually wide and thin
-                    if cw > 50 and ch < 20:
-                        if cw > best_line_width_px:
-                            best_line_width_px = cw
-                            best_line_rect = (x, y + int(h * 0.8), cw, ch)
-
-                if best_line_rect:
-                    lx, ly, lw, lh = best_line_rect
-                    scale_bar_coords = (lx, ly + lh // 2, lx + lw, ly + lh // 2)
-
-                    # OCR on the bottom area
-                    pil_img = Image.fromarray(bottom_crop)
-                    text = pytesseract.image_to_string(pil_img)
-                    print(f"[Scale] OCR text from bottom crop: '{text.strip()}'")
-
-                    # Parse: "200 nm", "1 µm", "500nm", "2 um", etc.
-                    match = re.search(r'([\d.]+)\s*(nm|µm|um|μm)', text, re.IGNORECASE)
-                    if match:
-                        value = float(match.group(1))
-                        unit = match.group(2)
-                        scale_bar_length_nm = _convert_to_nm(value, unit)
-                        if scale_bar_length_nm and best_line_width_px > 0:
-                            detected_pixel_size = scale_bar_length_nm / best_line_width_px
-                            print(f"[Scale] OCR: {value} {unit} over {best_line_width_px}px → {detected_pixel_size:.4f} nm/px")
-
-                            if pixel_size is None:
-                                pixel_size = detected_pixel_size
-                                method = "ocr_scale_bar"
-                    break  # found a scale bar line, stop trying thresholds
-
-    except Exception as e:
-        print(f"Error in scale bar detection: {e}")
 
     if pixel_size is None:
         method = "uncalibrated"

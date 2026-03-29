@@ -6,6 +6,7 @@ import shutil
 import os
 import uuid
 import glob
+import re
 from pathlib import Path
 from typing import List
 from processing import process_image, generate_preview, save_results_to_excel
@@ -55,6 +56,23 @@ def _cached_results_are_current(payload: dict) -> bool:
 
     return True
 
+
+def _sanitize_folder_name(folder_name: str) -> str:
+    if folder_name is None:
+        return ""
+
+    # Keep common punctuation users expect in folder names while blocking
+    # characters that are invalid or problematic across macOS and Windows.
+    invalid_chars = '<>:"/\\|?*'
+    cleaned = "".join(
+        c for c in folder_name
+        if ord(c) >= 32 and c not in invalid_chars
+    )
+
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    cleaned = cleaned.rstrip(". ")
+    return cleaned
+
 # Serve Frontend
 app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
 
@@ -76,7 +94,7 @@ async def read_folder_analysis():
 async def create_folder(folder_name: str = Form(...)):
     try:
         # Sanitize folder name (basic)
-        safe_name = "".join([c for c in folder_name if c.isalnum() or c in " -_"]).strip()
+        safe_name = _sanitize_folder_name(folder_name)
         if not safe_name:
              raise HTTPException(status_code=400, detail="Invalid folder name")
         
@@ -86,6 +104,8 @@ async def create_folder(folder_name: str = Form(...)):
         
         folder_path.mkdir(parents=True, exist_ok=True)
         return {"status": "success", "folder": safe_name}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -101,6 +121,32 @@ async def list_folders():
             folders.append(path.name)
     folders.sort()
     return folders
+
+
+@app.put("/folders/{folder_name}")
+async def rename_folder(folder_name: str, new_name: str = Form(...)):
+    try:
+        source_path = UPLOAD_DIR / folder_name
+        if not source_path.exists() or not source_path.is_dir():
+            raise HTTPException(status_code=404, detail="Folder not found")
+
+        safe_name = _sanitize_folder_name(new_name)
+        if not safe_name:
+            raise HTTPException(status_code=400, detail="Invalid folder name")
+
+        if safe_name == folder_name:
+            return {"status": "success", "folder": safe_name, "renamed": False}
+
+        target_path = UPLOAD_DIR / safe_name
+        if target_path.exists():
+            raise HTTPException(status_code=400, detail="A folder with that name already exists")
+
+        source_path.rename(target_path)
+        return {"status": "success", "folder": safe_name, "renamed": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.delete("/folders/{folder_name}")
 async def delete_folder(folder_name: str):
@@ -118,6 +164,8 @@ async def delete_folder(folder_name: str):
         # For now, let's just delete the upload folder. Orphaned results are harmless but take space.
         
         return {"status": "success", "message": "Folder deleted"}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

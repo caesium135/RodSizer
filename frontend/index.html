@@ -440,6 +440,7 @@
                 <div style="gap: 10px; display: flex;">
                     <button class="btn btn-outline" style="padding: 10px 15px;"
                         onclick="openUploadHelp()">Instructions</button>
+                    <button class="btn btn-outline" onclick="renameCurrentFolder()">Rename Folder</button>
                     <button class="btn" onclick="viewFolderAnalysis()">View Analysis</button>
                     <button class="btn btn-danger" onclick="deleteCurrentFolder()">Delete Folder</button>
                 </div>
@@ -449,12 +450,7 @@
                 <h3>Upload Images</h3>
 
                 <p style="color: #555; margin-bottom: 10px; font-size: 14px;">
-                    Supported image formats: <strong>TIFF, PNG, JPG</strong><br>
-                    Supported metadata formats: <strong>.dm3, .dm4, .emd</strong>
-                </p>
-                <p style="color: #888; margin-bottom: 20px; font-size: 12px;">
-                    Auto scale bar: <strong>.dm3/.dm4/.emd</strong> (from metadata) &amp; <strong>TIFF</strong> (ImageJ metadata).<br>
-                    For PNG/JPG without metadata, manual or OCR-based scale bar calibration is available in the analysis page.
+                    Recommending <strong>.dm3/.dm4/.emd</strong> formats for embedded scales.
                 </p>
                 <button class="btn btn-outline" onclick="document.getElementById('fileInput').click()">Choose
                     Files</button>
@@ -475,7 +471,7 @@
                         <ul>
                             <li><strong>.dm3/.dm4/.emd:</strong> Pixel size read automatically from metadata</li>
                             <li><strong>TIFF (ImageJ):</strong> Pixel size read from ImageJ metadata if available</li>
-                            <li><strong>PNG/JPG (or TIFF without metadata):</strong> OCR auto-detection of scale bar, or manual calibration in the analysis page</li>
+                            <li><strong>PNG/JPG (or TIFF without metadata):</strong> Manual calibration is available in the analysis page</li>
                         </ul>
                         <p>If you have a separate metadata file (.dm3/.dm4/.emd), upload it with the <strong>same filename</strong> as the image for auto-linking.</p>
 
@@ -497,6 +493,12 @@
     <script>
         let currentFolder = null;
         let pollInterval = null;
+
+        function setHeaderVisibility(showHeader) {
+            const header = document.querySelector('.app-header');
+            if (!header) return;
+            header.style.display = showHeader ? 'flex' : 'none';
+        }
 
         // Init
         window.addEventListener('DOMContentLoaded', async () => {
@@ -531,6 +533,63 @@
             }
         }
 
+        async function renameFolder(oldName) {
+            const suggestedName = oldName || currentFolder;
+            if (!suggestedName) return;
+
+            const nextName = prompt(`Rename folder "${suggestedName}" to:`, suggestedName);
+            if (nextName === null) return;
+
+            const trimmedName = nextName.trim();
+            if (!trimmedName) {
+                alert("Folder name cannot be empty.");
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('new_name', trimmedName);
+
+            try {
+                const response = await fetch(`/folders/${encodeURIComponent(suggestedName)}`, {
+                    method: 'PUT',
+                    body: formData
+                });
+                let data = {};
+                try {
+                    data = await response.json();
+                } catch (_) {
+                    data = {};
+                }
+
+                if (response.status === 405) {
+                    alert('The app needs to be restarted before folder rename is available. Please close and relaunch Nanorod Detector 2.0.');
+                    return;
+                }
+
+                if (!response.ok) {
+                    alert("Error: " + (data.detail || 'Failed to rename folder'));
+                    return;
+                }
+
+                const renamedFolder = data.folder || trimmedName;
+                if (currentFolder === suggestedName) {
+                    currentFolder = renamedFolder;
+                    document.getElementById('currentFolderTitle').textContent = renamedFolder;
+                    const url = new URL(window.location);
+                    url.searchParams.set('folder', renamedFolder);
+                    window.history.replaceState({}, '', url);
+                }
+
+                await loadFolders();
+                if (currentFolder === renamedFolder) {
+                    await loadImages();
+                }
+            } catch (e) {
+                console.error(e);
+                alert("Failed to rename folder. If the app was updated recently, please relaunch it and try again.");
+            }
+        }
+
         async function loadFolders() {
             try {
                 const response = await fetch('/folders');
@@ -547,14 +606,37 @@
 
                 folders.forEach(folder => {
                     const tr = document.createElement('tr');
-                    tr.innerHTML = `
-                        <td>
-                            <a class="folder-link" onclick="selectFolder('${folder}')">📁 ${folder}</a>
-                        </td>
-                        <td style="text-align: right;">
-                            <button class="btn btn-danger" style="padding: 5px 10px; font-size: 12px;" onclick="deleteFolderByName('${folder}')">Delete</button>
-                        </td>
-                    `;
+
+                    const nameCell = document.createElement('td');
+                    const folderLink = document.createElement('a');
+                    folderLink.className = 'folder-link';
+                    folderLink.textContent = `📁 ${folder}`;
+                    folderLink.addEventListener('click', () => selectFolder(folder));
+                    nameCell.appendChild(folderLink);
+
+                    const actionsCell = document.createElement('td');
+                    actionsCell.style.textAlign = 'right';
+
+                    const renameBtn = document.createElement('button');
+                    renameBtn.className = 'btn btn-outline';
+                    renameBtn.style.padding = '5px 10px';
+                    renameBtn.style.fontSize = '12px';
+                    renameBtn.style.marginRight = '8px';
+                    renameBtn.textContent = 'Rename';
+                    renameBtn.addEventListener('click', () => renameFolder(folder));
+
+                    const deleteBtn = document.createElement('button');
+                    deleteBtn.className = 'btn btn-danger';
+                    deleteBtn.style.padding = '5px 10px';
+                    deleteBtn.style.fontSize = '12px';
+                    deleteBtn.textContent = 'Delete';
+                    deleteBtn.addEventListener('click', () => deleteFolderByName(folder));
+
+                    actionsCell.appendChild(renameBtn);
+                    actionsCell.appendChild(deleteBtn);
+
+                    tr.appendChild(nameCell);
+                    tr.appendChild(actionsCell);
                     tbody.appendChild(tr);
                 });
             } catch (e) {
@@ -574,6 +656,7 @@
             window.history.pushState({}, '', url);
 
             // Toggle Views
+            setHeaderVisibility(false);
             document.getElementById('folderLedgerView').style.display = 'none';
             document.getElementById('folderDetailView').style.display = 'block';
 
@@ -590,6 +673,7 @@
             window.history.pushState({}, '', url);
 
             // Toggle Views
+            setHeaderVisibility(true);
             document.getElementById('folderDetailView').style.display = 'none';
             document.getElementById('folderLedgerView').style.display = 'block';
 
@@ -605,6 +689,11 @@
             await performDelete(currentFolder);
         }
 
+        async function renameCurrentFolder() {
+            if (!currentFolder) return;
+            await renameFolder(currentFolder);
+        }
+
         async function deleteFolderByName(name) {
             if (!confirm(`Permanently delete folder "${name}"?`)) return;
             await performDelete(name);
@@ -612,7 +701,7 @@
 
         async function performDelete(name) {
             try {
-                const response = await fetch(`/folders/${name}`, { method: 'DELETE' });
+                const response = await fetch(`/folders/${encodeURIComponent(name)}`, { method: 'DELETE' });
                 if (response.ok) {
                     if (currentFolder === name) deselectFolder();
                     else loadFolders();

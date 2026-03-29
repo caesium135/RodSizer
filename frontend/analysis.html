@@ -250,6 +250,19 @@
             gap: 5px;
         }
 
+        .image-toggle-btn {
+            position: absolute;
+            top: 10px;
+            right: 100px;
+            background: rgba(255, 255, 255, 0.9);
+            border: 1px solid #ccc;
+            padding: 5px 10px;
+            cursor: pointer;
+            z-index: 10;
+            border-radius: 4px;
+            font-size: 13px;
+        }
+
         .zoom-btn.active {
             background: #007bff;
             color: white;
@@ -274,6 +287,16 @@
             height: auto;
             object-fit: contain;
             display: block;
+        }
+
+        #particleOverlayCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 15;
         }
 
         /* Scale bar calibration */
@@ -342,41 +365,6 @@
 </head>
 
 <body>
-    <!-- Header -->
-    <div class="app-header"
-        style="display: flex; align-items: center; justify-content: space-between; background: white; padding: 8px 16px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); margin-bottom: 12px;">
-        <div style="display: flex; align-items: center; gap: 12px;">
-            <img src="/static/assets/headers/header_default.png" alt="Logo"
-                style="width: 108px; height: auto; border-radius: 4px; object-fit: contain;" id="appHeaderImage">
-            <div>
-                <h1 style="margin: 0; font-size: 16px; color: #333;">Nanorod Detector 2.0</h1>
-                <p style="margin: 2px 0 0; color: #666; font-size: 11px;">Detects, sizes, and analyzes gold nanorods.
-                </p>
-            </div>
-        </div>
-    </div>
-
-    <script>
-        const HEADER_IMAGES = [
-            'header_1.png', 'header_2.png', 'header_3.png', 'header_4.png',
-            'header_5.png', 'header_6.png', 'header_7.png', 'header_8.png',
-            'header_9.png', 'header_default.png'
-        ];
-
-        function randomizeHeader() {
-            const imgElement = document.getElementById('appHeaderImage');
-            if (!imgElement) return;
-
-            if (!sessionStorage.getItem('app_booted')) {
-                sessionStorage.setItem('app_booted', 'true');
-                imgElement.src = '/static/assets/headers/header_default.png';
-            } else {
-                const randomImage = HEADER_IMAGES[Math.floor(Math.random() * HEADER_IMAGES.length)];
-                imgElement.src = '/static/assets/headers/' + randomImage;
-            }
-        }
-        randomizeHeader();
-    </script>
 
     <div class="nav">
         <a href="#" id="backLink" onclick="goBack()">← Back to Folder</a>
@@ -392,17 +380,14 @@
             <div class="modal-section">
                 <h3>Analysis Instructions</h3>
                 <div class="modal-body">
-                    <p><strong>1. Image Review:</strong> center panel shows two views:</p>
-                    <ul>
-                        <li><strong>Left:</strong> Segmented Nanoparticles (Raw detection).</li>
-                        <li><strong>Right:</strong> Fitted AuNRs using Rotated Bounding Boxes (Final sizing).</li>
-                    </ul>
+                    <p><strong>1. Image Review:</strong> center panel shows the processed particle image by default. Use the toggle button to switch to the binary mask view if needed.</p>
                     <p><strong>2. Verify & Exclude:</strong> Check the <em>Ledger</em> (right panel). If a detection is
                         incorrect (e.g., scale bar, dirt, not a rod), uncheck the <strong>'nanoparticles'</strong> box
                         for that ID to exclude it.</p>
-                    <p><strong>3. Calculate:</strong> Press <strong>"Calculate Analysis"</strong> to generate statistics
+                    <p><strong>3. Update:</strong> Press <strong>"Update Particles"</strong> to generate statistics
                         and histogram plots based on valid selections.</p>
-                    <p><strong>4. Save & Export:</strong></p>
+                    <p><strong>4. Calibrate if needed:</strong> If embedded scale data is unavailable, use the manual scale tool to set the image calibration.</p>
+                    <p><strong>5. Save & Export:</strong></p>
                     <ul>
                         <li><strong>Download Excel:</strong> Get the raw data for this specific image.</li>
                         <li><strong>Save for Folder Analysis:</strong> Confirms these results for the aggregate folder
@@ -420,14 +405,19 @@
     <div id="content" class="container" style="display: none;">
         <!-- Column 1: Images (Grouped) -->
         <div class="panel">
-            <h2 style="text-align: center;">Fitted AuNRs</h2>
+            <h2 id="imagePanelTitle" style="text-align: center;">Detected Particles</h2>
+            <p id="imagePanelHint" style="text-align: center; margin: -4px 0 12px 0; font-size: 13px; color: #666;">
+                Click on particles to deselect
+            </p>
             <div class="image-container" style="position: relative; flex: 1; overflow: auto;">
                 <div class="image-wrapper" id="zoomWrapper">
+                    <button class="image-toggle-btn" onclick="toggleImageView()" id="imageToggleBtn">Show Binary Mask</button>
                     <button class="zoom-btn" onclick="toggleZoom()" id="zoomToggle">
                         <span style="font-size: 16px;">🔍</span> Zoom
                     </button>
+                    <canvas id="particleOverlayCanvas"></canvas>
                     <canvas id="scaleCanvas" style="display: none;"></canvas>
-                    <img id="processedImage" src="" alt="Processed Image">
+                    <img id="processedImage" src="" alt="Detected Particles">
                 </div>
             </div>
         </div>
@@ -451,7 +441,7 @@
                 <h4 id="calibrationPanelTitle">Scale Calibration</h4>
                 <p id="calibrationPanelNote" style="margin: 0 0 8px 0; color: #6b5a00;">You can recalibrate this image at any time.</p>
                 <div class="cal-option">
-                    <label>Option 1: Manual</label>
+                    <label>Manual</label>
                     <p style="margin: 4px 0; color: #555;">Draw a line along the scale bar in the image, then enter its length.</p>
                     <button id="drawLineBtn" onclick="startDrawLine()">Draw Line on Image</button>
                     <span id="lineStatus" style="margin-left: 6px; color: #888;"></span>
@@ -460,12 +450,6 @@
                         <span style="font-size: 11px;">nm</span>
                         <button onclick="applyManualScale()" style="margin-left: 4px;">Set Scale</button>
                     </div>
-                </div>
-                <div class="cal-option">
-                    <label>Option 2: Auto-detect (OCR)</label>
-                    <p style="margin: 4px 0; color: #555;">Automatically detect scale bar line &amp; text in the image.</p>
-                    <button class="cal-secondary" onclick="autoDetectScale()">Auto Detect</button>
-                    <span id="autoDetectStatus" style="margin-left: 6px; color: #888;"></span>
                 </div>
             </div>
 
@@ -484,7 +468,7 @@
                 </table>
             </div>
 
-            <button id="analyzeBtn" class="btn btn-primary" onclick="calculateAnalysis()">Calculate Analysis ↓</button>
+            <button id="analyzeBtn" class="btn btn-primary" onclick="calculateAnalysis()">Update Particles ↓</button>
         </div>
     </div>
 
@@ -561,6 +545,9 @@
         let currentIsPlaceholderCalibration = false;
         let currentCalibrationInfo = null;
         let calibrationPanelOpen = false;
+        let currentPixelSize = 1;
+        let currentImageMode = 'processed';
+        let currentImageUrls = { processed: '', binary: '' };
 
         async function processImage() {
             try {
@@ -591,13 +578,16 @@
             currentFilename = data.filename || imageId;
             currentIsPlaceholderCalibration = Boolean(data.calibration_info && data.calibration_info.is_placeholder);
             currentCalibrationInfo = data.calibration_info || null;
+            currentPixelSize = data.pixel_size_nm || 1;
+            currentImageUrls = {
+                processed: data.image_url,
+                binary: data.binary_url
+            };
 
             // Images
             // Add timestamp to prevent caching
-            const timestamp = new Date().getTime();
-            document.getElementById('processedImage').src = `${data.image_url}?t=${timestamp}`;
-
-            // Overlay image no longer displayed (only fitted AuNRs shown)
+            currentImageMode = 'processed';
+            updateDisplayedImage();
 
             // Download Link
             // Download Link
@@ -660,8 +650,35 @@
                 });
             }
 
+            document.querySelectorAll('.rod-checkbox').forEach(cb => {
+                cb.addEventListener('change', renderParticleOverlay);
+            });
+
+            renderParticleOverlay();
+
             // Automatically Calculate to show graphs immediately
             calculateAnalysis(true);
+        }
+
+        function updateDisplayedImage() {
+            const image = document.getElementById('processedImage');
+            const timestamp = new Date().getTime();
+            const isBinary = currentImageMode === 'binary';
+            const nextUrl = isBinary ? currentImageUrls.binary : currentImageUrls.processed;
+
+            document.getElementById('imagePanelTitle').textContent = isBinary ? 'Binary Mask' : 'Detected Particles';
+            document.getElementById('imageToggleBtn').textContent = isBinary ? 'Show Processed Image' : 'Show Binary Mask';
+            image.alt = isBinary ? 'Binary Mask' : 'Detected Particles';
+            image.onload = () => {
+                syncParticleOverlayToImage();
+                renderParticleOverlay();
+            };
+            image.src = `${nextUrl}?t=${timestamp}`;
+        }
+
+        function toggleImageView() {
+            currentImageMode = currentImageMode === 'processed' ? 'binary' : 'processed';
+            updateDisplayedImage();
         }
 
         function updateMeasurementUnits() {
@@ -682,6 +699,7 @@
             for (let i = 0; i < checkboxes.length; i++) {
                 checkboxes[i].checked = source.checked;
             }
+            renderParticleOverlay();
         }
 
         function scrollToSelection() {
@@ -847,6 +865,78 @@
         const processedImage = document.getElementById('processedImage');
         const zoomWrapper = document.getElementById('zoomWrapper');
         const zoomToggle = document.getElementById('zoomToggle');
+        const particleOverlayCanvas = document.getElementById('particleOverlayCanvas');
+        const particleOverlayCtx = particleOverlayCanvas.getContext('2d');
+
+        function syncParticleOverlayToImage() {
+            const img = document.getElementById('processedImage');
+            if (!img || !img.naturalWidth || !img.naturalHeight) return false;
+
+            particleOverlayCanvas.width = img.naturalWidth;
+            particleOverlayCanvas.height = img.naturalHeight;
+            particleOverlayCanvas.style.width = `${img.clientWidth}px`;
+            particleOverlayCanvas.style.height = `${img.clientHeight}px`;
+            particleOverlayCanvas.style.left = `${img.offsetLeft}px`;
+            particleOverlayCanvas.style.top = `${img.offsetTop}px`;
+            return true;
+        }
+
+        function getCheckboxStateByIndex(index) {
+            const checkbox = document.querySelector(`.rod-checkbox[data-index="${index}"]`);
+            return checkbox ? checkbox.checked : true;
+        }
+
+        function getParticleBoxPoints(rod) {
+            const widthPx = rod.width_nm / currentPixelSize;
+            const lengthPx = rod.length_nm / currentPixelSize;
+            const angleRad = (rod.orientation_deg || 0) * Math.PI / 180;
+            const cosA = Math.cos(angleRad);
+            const sinA = Math.sin(angleRad);
+            const halfW = widthPx / 2;
+            const halfL = lengthPx / 2;
+
+            const localCorners = [
+                { x: -halfW, y: -halfL },
+                { x: halfW, y: -halfL },
+                { x: halfW, y: halfL },
+                { x: -halfW, y: halfL }
+            ];
+
+            return localCorners.map(pt => ({
+                x: rod.centroid_x + pt.x * cosA - pt.y * sinA,
+                y: rod.centroid_y + pt.x * sinA + pt.y * cosA
+            }));
+        }
+
+        function renderParticleOverlay() {
+            if (!syncParticleOverlayToImage()) return;
+
+            particleOverlayCtx.clearRect(0, 0, particleOverlayCanvas.width, particleOverlayCanvas.height);
+            if (!currentData || currentData.length === 0) return;
+
+            currentData.forEach((rod, index) => {
+                const isSelected = getCheckboxStateByIndex(index);
+                const corners = getParticleBoxPoints(rod);
+
+                particleOverlayCtx.beginPath();
+                particleOverlayCtx.moveTo(corners[0].x, corners[0].y);
+                for (let i = 1; i < corners.length; i++) {
+                    particleOverlayCtx.lineTo(corners[i].x, corners[i].y);
+                }
+                particleOverlayCtx.closePath();
+                particleOverlayCtx.strokeStyle = isSelected ? '#1e5eff' : '#ffd400';
+                particleOverlayCtx.lineWidth = isSelected ? 3 : 2.5;
+                particleOverlayCtx.stroke();
+            });
+        }
+
+        function setImageTransform(origin, scale) {
+            const targetElements = [processedImage, particleOverlayCanvas, scaleCanvas];
+            targetElements.forEach(el => {
+                el.style.transformOrigin = origin;
+                el.style.transform = scale;
+            });
+        }
 
         function toggleZoom() {
             isZoomActive = !isZoomActive;
@@ -857,7 +947,7 @@
                 zoomToggle.classList.remove('active');
                 zoomWrapper.style.cursor = 'default';
                 // Reset
-                processedImage.style.transform = 'scale(1)';
+                setImageTransform('50% 50%', 'scale(1)');
             }
         }
 
@@ -872,13 +962,12 @@
             const xPercent = (x / rect.width) * 100;
             const yPercent = (y / rect.height) * 100;
 
-            processedImage.style.transformOrigin = `${xPercent}% ${yPercent}%`;
-            processedImage.style.transform = 'scale(2.5)';
+            setImageTransform(`${xPercent}% ${yPercent}%`, 'scale(2.5)');
         });
 
         zoomWrapper.addEventListener('mouseleave', function () {
             if (!isZoomActive) return;
-            processedImage.style.transform = 'scale(1)';
+            setImageTransform('50% 50%', 'scale(1)');
         });
 
         async function downloadFilteredReport() {
@@ -1062,7 +1151,7 @@
             title.style.marginBottom = '20px';
             pdfContainer.appendChild(title);
 
-            // Add Fitted AuNRs image (Resized for PDF)
+            // Add the currently displayed image (resized for PDF)
             const imgContainer = document.createElement('div');
             imgContainer.style.display = 'flex';
             imgContainer.style.justifyContent = 'center';
@@ -1149,6 +1238,7 @@
                 const checkboxes = document.querySelectorAll('.rod-checkbox');
                 if (checkboxes[nearestIdx]) {
                     checkboxes[nearestIdx].checked = !checkboxes[nearestIdx].checked;
+                    renderParticleOverlay();
                     // Flash the table row briefly
                     const row = checkboxes[nearestIdx].closest('tr');
                     row.style.background = checkboxes[nearestIdx].checked ? '#d4edda' : '#f8d7da';
@@ -1189,7 +1279,7 @@
             if (needsCalibration) {
                 calibrationPanelOpen = true;
                 title.textContent = 'Scale Bar Calibration Required';
-                note.textContent = 'No reliable scale was found. Please set the scale manually or try auto-detect.';
+                note.textContent = 'No reliable scale was found. Please set the scale manually.';
                 toggleBtn.textContent = 'Hide calibration tools';
             } else {
                 title.textContent = 'Scale Calibration';
@@ -1201,6 +1291,11 @@
         }
 
         function startDrawLine() {
+            if (currentImageMode !== 'processed') {
+                currentImageMode = 'processed';
+                updateDisplayedImage();
+            }
+
             isDrawingLine = true;
             lineStart = null;
             lineEnd = null;
@@ -1301,6 +1396,8 @@
                 const response = await fetch(`/process/${imageId}?manual_pixel_size=${pixelSize}`, { method: 'POST' });
                 const data = await response.json();
                 if (response.ok) {
+                    calibrationPanelOpen = false;
+                    document.getElementById('lineStatus').textContent = '';
                     displayResults(data);
                 } else {
                     alert('Error: ' + (data.detail || 'Processing failed'));
@@ -1311,28 +1408,12 @@
         }
 
         window.addEventListener('resize', function() {
+            syncParticleOverlayToImage();
+            renderParticleOverlay();
             if (scaleCanvas.style.display === 'block') {
                 syncScaleCanvasToImage();
             }
         });
-
-        async function autoDetectScale() {
-            document.getElementById('autoDetectStatus').textContent = 'Detecting...';
-            try {
-                const response = await fetch(`/process/${imageId}?force_reprocess=true`, { method: 'POST' });
-                const data = await response.json();
-                if (response.ok) {
-                    if (data.calibration_info && !data.calibration_info.is_placeholder && data.calibration_info.method !== 'default' && data.calibration_info.method !== 'uncalibrated') {
-                        document.getElementById('autoDetectStatus').textContent = 'Detected! Reloading...';
-                        displayResults(data);
-                    } else {
-                        document.getElementById('autoDetectStatus').textContent = 'Could not detect scale bar. Try manual.';
-                    }
-                }
-            } catch (e) {
-                document.getElementById('autoDetectStatus').textContent = 'Detection failed.';
-            }
-        }
 
         processImage();
     </script>
