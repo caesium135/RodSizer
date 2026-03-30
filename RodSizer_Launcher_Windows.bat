@@ -2,6 +2,12 @@
 cd /d "%~dp0"
 setlocal enabledelayedexpansion
 
+set "PROJECT_DIR=%CD%"
+set "BACKEND_DIR=%PROJECT_DIR%\backend"
+set "VENV_DIR=%PROJECT_DIR%\.venv"
+set "VENV_PYTHON=%VENV_DIR%\Scripts\python.exe"
+set "APP_URL=http://127.0.0.1:8501"
+
 echo ==================================================
 echo       RodSizer - Launcher
 echo ==================================================
@@ -53,20 +59,40 @@ if %errorlevel% equ 0 (
 echo.
 echo [INFO] Using Python: "!PY_EXE!"
 
-REM Verify
+REM Verify selected Python
 "!PY_EXE!" --version >nul 2>&1
-if %errorlevel% neq 0 (
+if errorlevel 1 (
     echo.
     echo [CRITICAL ERROR] Selected python path is invalid.
     pause
     exit /b 1
 )
 
+if not exist "%BACKEND_DIR%\requirements.txt" (
+    echo.
+    echo [CRITICAL ERROR] Missing backend\requirements.txt
+    pause
+    exit /b 1
+)
+
+if not exist "%BACKEND_DIR%\main.py" (
+    echo.
+    echo [CRITICAL ERROR] Missing backend\main.py
+    pause
+    exit /b 1
+)
+
 REM --- 5. Setup Virtual Environment ---
-if exist ".venv" goto ACTIVATE_VENV
+if exist "%VENV_PYTHON%" goto CHECK_ENV
 echo.
 echo [First Run] Setting up Python environment...
-"!PY_EXE!" -m venv .venv
+"!PY_EXE!" -m venv "%VENV_DIR%"
+if errorlevel 1 (
+    echo.
+    echo [CRITICAL ERROR] Failed to create virtual environment.
+    pause
+    exit /b 1
+)
 
 REM Clear screen to focus attention
 cls
@@ -87,9 +113,35 @@ echo.
 REM Give user 2 seconds to read before text flies by
 timeout /t 2 >nul
 
-".venv\Scripts\python" -m pip install -r backend\requirements.txt
+"%VENV_PYTHON%" -m pip install --upgrade pip
+if errorlevel 1 (
+    echo.
+    echo [CRITICAL ERROR] Failed to upgrade pip.
+    pause
+    exit /b 1
+)
 
-:ACTIVATE_VENV
+"%VENV_PYTHON%" -m pip install -r "%BACKEND_DIR%\requirements.txt"
+if errorlevel 1 (
+    echo.
+    echo [CRITICAL ERROR] Dependency installation failed.
+    echo Please run RodSizer_DEBUG_Windows.bat for a guided repair.
+    pause
+    exit /b 1
+)
+
+:CHECK_ENV
+echo.
+echo [INFO] Checking Python environment...
+"%VENV_PYTHON%" -c "import cv2, numpy, fastapi, uvicorn, pandas, openpyxl, multipart, tifffile, h5py, skimage, scipy; import ncempy.io; from stardist.models import StarDist2D; from csbdeep.utils import normalize" >nul 2>&1
+if errorlevel 1 (
+    echo.
+    echo [CRITICAL ERROR] The RodSizer environment is incomplete or damaged.
+    echo Please run RodSizer_DEBUG_Windows.bat to repair it.
+    pause
+    exit /b 1
+)
+
 echo Activating environment...
 
 REM --- 6. Open Browser ---
@@ -99,14 +151,14 @@ echo The browser will open in 10 seconds...
 echo.
 echo IF PAGE FAILS TO LOAD:
 echo 1. Keep this window open.
-echo 2. Open Chrome/Edge and go to: http://127.0.0.1:8501
+echo 2. Open Chrome/Edge and go to: %APP_URL%
 echo.
 
-start "" /b cmd /c "timeout /t 10 >nul && start "" "http://127.0.0.1:8501""
+start "" cmd /c "timeout /t 10 >nul & start %APP_URL%"
 
 REM --- 7. Run Server ---
 echo Close this window to stop the app.
-cd backend
-..\.venv\Scripts\python -m uvicorn main:app --reload --host 127.0.0.1 --port 8501
+cd /d "%BACKEND_DIR%"
+"%VENV_PYTHON%" -m uvicorn main:app --reload --host 127.0.0.1 --port 8501
 
 pause
