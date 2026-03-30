@@ -1,24 +1,27 @@
 # RodSizer
 
-## About This App
-
-RodSizer is a specialized tool for analyzing Transmission Electron Microscopy (TEM) images of gold nanorods.
-
+## About
+RodSizer is a scientific local website tool for analyzing Transmission Electron Microscopy (TEM) images of gold nanorods. 
 It automatically:
 - Detects and segments nanoparticles from raw images.
 - Measures dimensions (Length, Width, Aspect Ratio) using advanced fitting algorithms.
 - Filters out non-rod particles (spheres, scale bars, dirt).
 - Generates batch statistics, histograms, and professional Excel/PDF reports.
-
-# Instruction for Launching
+##### Methodology: Based on JACS Au 2021, 1, 316−327.
+### Contributors:
+- Shi Chen in Murphy's group @ UIUC.
+- Arda Turk in Murphy's group @ UIUC.
+- Claude, ChatGPT.
+##### Group website: https://murphy-group.chemistry.illinois.edu/
+## Instruction for Launching
 1. Click on "<>code" in Github page.
 2. Click on "Download ZIP".
 3. Open Finder (MacOS) or Files (Windows).
 4. Click on the RodSizer.zip to unzip.
 5. Double-click on RodSizer_Launcher_MacOS.command or RodSizer_Launcher_Windows.bat.
 6. Wait for the environment to be set up (first time only) and the local website to be opened.
-### Notes: 
-- !DO NOT double-click on RodSizer_CLEANER_MacOS.command unless you are sure that you want to clean ALL local history of data and reports.
+## Notes: 
+- DO NOT double-click on RodSizer_CLEANER_MacOS.command unless you are sure that you want to clean ALL local history of data and reports.
 - First-time launching may take some time, like 5-10 mins.
 - Try ask a coding agent if there's an issue with environment setup.
 - MacOS is more recommended.
