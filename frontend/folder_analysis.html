@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Folder Analysis</title>
+    <title>Folder Analysis - RodSizer</title>
     <!-- Favicon -->
     <link rel="icon" type="image/png" href="/static/assets/loading_screen.png">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -195,41 +195,6 @@
 </head>
 
 <body>
-    <!-- Header -->
-    <div class="app-header"
-        style="display: flex; align-items: center; justify-content: space-between; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 20px; max-width: 1200px; margin: 0 auto 20px auto;">
-        <div style="display: flex; align-items: center; gap: 30px;">
-            <img src="/static/assets/headers/header_default.png" alt="Logo"
-                style="width: 270px; height: auto; border-radius: 8px; object-fit: contain;" id="appHeaderImage">
-            <div>
-                <h1 style="margin: 0; font-size: 32px; color: #333; text-align: left;">Nanorod Detector 2.0</h1>
-                <p style="margin: 5px 0 0; color: #666; font-size: 16px;">Detects, sizes, and analyzes gold nanorods.
-                </p>
-            </div>
-        </div>
-    </div>
-
-    <script>
-        const HEADER_IMAGES = [
-            'header_1.png', 'header_2.png', 'header_3.png', 'header_4.png',
-            'header_5.png', 'header_6.png', 'header_7.png', 'header_8.png',
-            'header_9.png', 'header_default.png'
-        ];
-
-        function randomizeHeader() {
-            const imgElement = document.getElementById('appHeaderImage');
-            if (!imgElement) return;
-
-            if (!sessionStorage.getItem('app_booted')) {
-                sessionStorage.setItem('app_booted', 'true');
-                imgElement.src = '/static/assets/headers/header_default.png';
-            } else {
-                const randomImage = HEADER_IMAGES[Math.floor(Math.random() * HEADER_IMAGES.length)];
-                imgElement.src = '/static/assets/headers/' + randomImage;
-            }
-        }
-        randomizeHeader();
-    </script>
 
     <div class="container">
         <div class="container">
@@ -400,17 +365,16 @@
                 const ctx = document.getElementById(canvasId).getContext('2d');
                 if (!data.length) return;
 
-                const binCount = 20;
+                const binCount = Math.max(20, Math.ceil(1 + 3.322 * Math.log10(data.length)));
                 const min = Math.floor(Math.min(...data));
                 const max = Math.ceil(Math.max(...data));
                 let step = (max - min) / binCount;
                 if (step === 0) step = 1;
 
                 const bins = new Array(binCount).fill(0);
-                const labels = [];
+                const binCenters = [];
                 for (let i = 0; i < binCount; i++) {
-                    const val = min + i * step + step / 2;
-                    labels.push(Math.round(val));
+                    binCenters.push((min + (i + 0.5) * step).toFixed(1));
                 }
 
                 data.forEach(v => {
@@ -419,20 +383,50 @@
                     bins[idx]++;
                 });
 
+                // Gaussian fit
+                const mean = data.reduce((a, b) => a + b, 0) / data.length;
+                const variance = data.reduce((a, b) => a + (b - mean) ** 2, 0) / data.length;
+                const stdDev = Math.sqrt(variance);
+                const amplitude = Math.max(...bins);
+
+                const gaussianY = binCenters.map(x => {
+                    const xVal = parseFloat(x);
+                    if (stdDev === 0) return 0;
+                    return amplitude * Math.exp(-0.5 * ((xVal - mean) / stdDev) ** 2);
+                });
+
                 return new Chart(ctx, {
                     type: 'bar',
                     data: {
-                        labels: labels,
+                        labels: binCenters,
                         datasets: [{
                             label: label,
                             data: bins,
-                            backgroundColor: 'rgba(54, 162, 235, 0.6)'
+                            backgroundColor: 'rgba(54, 162, 235, 0.6)',
+                            borderColor: 'rgba(54, 162, 235, 1)',
+                            borderWidth: 1,
+                            barPercentage: 1.0,
+                            categoryPercentage: 1.0,
+                            order: 2
+                        }, {
+                            label: 'Gaussian Fit',
+                            data: gaussianY,
+                            type: 'line',
+                            borderColor: 'rgba(255, 99, 132, 1)',
+                            borderWidth: 2,
+                            pointRadius: 0,
+                            fill: false,
+                            tension: 0.4,
+                            order: 1
                         }]
                     },
                     options: {
                         responsive: true,
                         maintainAspectRatio: false,
-                        scales: { y: { beginAtZero: true } },
+                        scales: {
+                            x: { ticks: { maxTicksLimit: 10, maxRotation: 45 } },
+                            y: { beginAtZero: true }
+                        },
                         animation: false,
                         layout: { padding: { right: 20 } }
                     }

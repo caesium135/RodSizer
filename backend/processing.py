@@ -5,7 +5,7 @@ import cv2
 import numpy as np
 from skimage import measure, morphology, segmentation, feature, color
 from skimage.filters import threshold_otsu, threshold_local
-from utils import get_pixel_size
+from utils import get_pixel_size, read_emd_image, read_emd_pixel_size
 import matplotlib.pyplot as plt
 import pandas as pd
 import math
@@ -86,7 +86,13 @@ def generate_preview(image_path: Path, output_dir: Path):
                 img = norm_data.astype(np.uint8)
             except:
                 pass
-        
+
+        if img is None and ext == '.emd':
+            try:
+                img = read_emd_image(image_path)
+            except Exception:
+                pass
+
         if img is None:
             # Try reading with OpenCV (works for TIFF, PNG, JPG)
             # Use IMREAD_UNCHANGED to get original depth then normalize
@@ -134,13 +140,17 @@ def process_image(image_path: Path, output_dir: Path, manual_pixel_size: float =
             print(f"Error reading Gatan metadata: {e}")
         return None
 
-    # Check if we have an external calibration source (linked .dm3 file)
+    # Check if we have an external calibration source (linked .dm3/.dm4/.emd file)
     if calibration_source_path and calibration_source_path.exists():
-        pixel_size_nm = read_dm3_pixel_size(calibration_source_path)
+        cal_ext = calibration_source_path.suffix.lower()
+        if cal_ext == '.emd':
+            pixel_size_nm = read_emd_pixel_size(calibration_source_path)
+        else:
+            pixel_size_nm = read_dm3_pixel_size(calibration_source_path)
         if pixel_size_nm:
             calibration_info = {
-                "method": "linked_dm3", 
-                "pixel_size_nm": pixel_size_nm, 
+                "method": "linked_metadata",
+                "pixel_size_nm": pixel_size_nm,
                 "source_file": calibration_source_path.name,
                 "description": f"Calibration: {calibration_source_path.name}"
             }
@@ -148,23 +158,24 @@ def process_image(image_path: Path, output_dir: Path, manual_pixel_size: float =
     if ext in ['.dm3', '.dm4']:
         try:
             dm = nio.read(str(image_path))
-            # ncempy returns data in 'data' key
             raw_data = dm['data']
-            
-            # Normalize to 0-255 uint8 for OpenCV
             if raw_data.ndim == 3:
                 raw_data = raw_data[0]
-            
             norm_data = cv2.normalize(raw_data, None, 0, 255, cv2.NORM_MINMAX)
             img = norm_data.astype(np.uint8)
-            
-            # Get pixel size if not already found from source
             if pixel_size_nm is None and 'pixelSize' in dm:
                 pixel_size_nm = float(dm['pixelSize'][0])
                 calibration_info = {"method": "metadata_dm", "pixel_size_nm": pixel_size_nm}
-                
         except Exception as e:
             print(f"Error reading Gatan file: {e}")
+
+    elif ext == '.emd':
+        img = read_emd_image(image_path)
+        if img is not None and pixel_size_nm is None:
+            emd_ps = read_emd_pixel_size(image_path)
+            if emd_ps:
+                pixel_size_nm = emd_ps
+                calibration_info = {"method": "metadata_emd", "pixel_size_nm": pixel_size_nm}
 
     if img is None:
         # Standard image load
@@ -178,12 +189,22 @@ def process_image(image_path: Path, output_dir: Path, manual_pixel_size: float =
         pixel_size_nm = manual_pixel_size
         calibration_info = {"method": "manual", "scale_bar_length_nm": "Manual"}
     elif pixel_size_nm is None:
-        # Try getting from utils (TIFF tags or OCR)
+        # Try getting from utils (embedded metadata where available)
         pixel_size_nm, calibration_info = get_pixel_size(image_path)
     
     # Ensure pixel_size_nm is valid
     if pixel_size_nm is None:
-        pixel_size_nm = 1.0 # Default
+        pixel_size_nm = 1.0  # Placeholder to keep pixel-domain processing alive
+        calibration_info = calibration_info or {}
+        calibration_info["method"] = "uncalibrated"
+        calibration_info["is_placeholder"] = True
+        calibration_info.setdefault(
+            "warning",
+            "No calibration found. Measurements are using a placeholder scale until you calibrate manually."
+        )
+    else:
+        calibration_info = calibration_info or {}
+        calibration_info.setdefault("is_placeholder", False)
     
 
     
@@ -472,39 +493,35 @@ def process_image(image_path: Path, output_dir: Path, manual_pixel_size: float =
             "contour": cand["contour"] # Keep for coloring
         })
         
-        # Draw Visualization
-        # 1. Draw Rectangle (Navy Blue)
-        # We need the box points
+        # Draw Visualization - Clean thin outline + small ID label
         rect_reconst = cv2.RotatedRect(cand["center"], (cand["width_nm"]/pixel_size_nm, cand["length_nm"]/pixel_size_nm), cand["angle"])
         box = cv2.boxPoints(rect_reconst)
         box = np.int32(box)
-        cv2.drawContours(output_image, [box], 0, (128, 0, 0), 3)
-        
-        # 2. Draw Centerline (Red) - REMOVED as requested
-        # pt1, pt2 = cand["centerline"]
-        # cv2.line(output_image, pt1, pt2, (0, 0, 255), 2)
-        
-        # 3. Label (Color Coded Groups of 10)
-        count = len(results)
-        if 40 <= count <= 50:
-            number_color = (0, 0, 255) # Bright Red (BGR)
-        else:
-            # Bright Neon colors for visibility on dark/grey particles (BGR)
-            palette = [
-                (0, 255, 255),    # Yellow
-                (255, 0, 255),    # Magenta/Pink
-                (0, 255, 0),      # Lime Green
-                (255, 255, 0),    # Cyan/Light Blue
-                (0, 140, 255),    # Bright Orange
-                (50, 205, 50),    # Lime Green
-                (203, 192, 255),  # Pinkish
-                (0, 255, 127)     # Spring Green
-            ]
-            idx = (count // 10) % len(palette)
-            number_color = palette[idx]
 
-        cv2.putText(output_image, str(count), (int(cand["center"][0]) - 15, int(cand["center"][1]) + 5), 
-                   cv2.FONT_HERSHEY_SIMPLEX, 1.2, number_color, 3)
+        # Thin green outline only — no fill
+        cv2.drawContours(output_image, [box], 0, (0, 220, 0), 1, cv2.LINE_AA)
+
+        # Small ID label with background pill
+        count = len(results)
+        label_text = str(count)
+        h_img, w_img = output_image.shape[:2]
+        font_scale = max(0.3, min(0.5, w_img / 3000.0))
+        thickness = 1
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        (tw, th), baseline = cv2.getTextSize(label_text, font, font_scale, thickness)
+
+        # Position: top-left corner of bounding box
+        lx = int(cand["center"][0] - tw / 2)
+        ly = int(cand["center"][1] - th / 2)
+
+        # Background pill
+        cv2.rectangle(output_image,
+                      (lx - 2, ly - th - 2),
+                      (lx + tw + 2, ly + baseline + 2),
+                      (0, 0, 0), -1)
+        # White text
+        cv2.putText(output_image, label_text, (lx, ly),
+                    font, font_scale, (255, 255, 255), thickness, cv2.LINE_AA)
 
     # Classification & Coloring (Bayes-like)
     # We'll use K-means on the descriptors to group particles
@@ -574,13 +591,15 @@ def process_image(image_path: Path, output_dir: Path, manual_pixel_size: float =
     
     # Draw Scale Bar Verification
     scale_drawn = False
+    has_real_scale = bool(pixel_size_nm) and not calibration_info.get("is_placeholder")
+    effective_requested_bar_nm = requested_bar_length_nm if has_real_scale else None
     
     # 0. If user requested a specific length, force synthetic bar (skip detection viz)
-    if requested_bar_length_nm:
+    if effective_requested_bar_nm:
         # Will fall through to synthetic block
         pass
     # 1. Try to draw over detected line (only if no manual override)
-    elif calibration_info.get("scale_bar_coords"):
+    elif calibration_info.get("scale_bar_coords") and has_real_scale:
         x1, y1, x2, y2 = calibration_info["scale_bar_coords"]
         
         # Calculate length if missing
@@ -598,11 +617,11 @@ def process_image(image_path: Path, output_dir: Path, manual_pixel_size: float =
         scale_drawn = True
         
     # 2. If no detected line OR manual override, draw synthetic bar
-    if (not scale_drawn and pixel_size_nm) or requested_bar_length_nm:
+    if (not scale_drawn and has_real_scale) or effective_requested_bar_nm:
         h, w = output_image.shape[:2]
         
-        if requested_bar_length_nm:
-            bar_length_nm = requested_bar_length_nm
+        if effective_requested_bar_nm:
+            bar_length_nm = effective_requested_bar_nm
         else:
             # Choose a nice round number for the bar
             target_width_px = w * 0.2 # Target 20% of image width
@@ -632,8 +651,8 @@ def process_image(image_path: Path, output_dir: Path, manual_pixel_size: float =
         scale_drawn = True
 
     if not scale_drawn:
-        # If no scale detected and no pixel size, warn user
-        cv2.putText(output_image, "Scale not detected", (50, 100), 
+        warning_text = "Scale not calibrated" if calibration_info.get("is_placeholder") else "Scale not detected"
+        cv2.putText(output_image, warning_text, (50, 100),
                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
 
     # Clean up source file name in calibration info for frontend
@@ -730,6 +749,7 @@ def process_image(image_path: Path, output_dir: Path, manual_pixel_size: float =
         sanitized_results.append(sanitized_res_item)
 
     output_data = {
+        "results_schema_version": 2,
         "filename": clean_name,
         "data": sanitized_results,
         "image_url": f"/results/{result_image_filename}",

@@ -7,8 +7,9 @@ scikit-image
 ncempy
 matplotlib
 pandas
-pytesseract
 Pillow
+tifffile
 stardist
 tensorflow
 openpyxl
+h5py
