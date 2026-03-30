@@ -9,7 +9,7 @@ import glob
 import re
 from pathlib import Path
 from typing import List
-from processing import process_image, generate_preview, save_results_to_excel
+from processing import process_image, generate_preview, save_results_to_excel, generate_binary_mask_preview
 from typing import Optional
 from pydantic import BaseModel
 import json
@@ -42,8 +42,10 @@ RESULTS_DIR.mkdir(exist_ok=True)
 FRONTEND_DIR.mkdir(exist_ok=True)
 
 
-def _cached_results_are_current(payload: dict) -> bool:
+def _cached_results_are_current(payload: dict, expected_binary_mask_tune: int = 0) -> bool:
     if payload.get("results_schema_version") != RESULTS_SCHEMA_VERSION:
+        return False
+    if int(payload.get("binary_mask_tune", 0)) != int(expected_binary_mask_tune):
         return False
 
     calibration_info = payload.get("calibration_info") or {}
@@ -72,6 +74,37 @@ def _sanitize_folder_name(folder_name: str) -> str:
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
     cleaned = cleaned.rstrip(". ")
     return cleaned
+
+
+def _find_input_and_calibration_source(image_id: str):
+    files = list(UPLOAD_DIR.rglob(f"{image_id}.*"))
+    if not files:
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    input_path = files[0]
+    search_dir = input_path.parent
+    calibration_source_path = None
+
+    current_filename = input_path.name
+    if len(current_filename) > 37 and current_filename[36] == '_':
+        original_name_with_ext = current_filename[37:]
+        original_stem = Path(original_name_with_ext).stem
+    else:
+        original_stem = input_path.stem
+
+    if original_stem:
+        for f in search_dir.glob("*"):
+            if f.suffix.lower() in ['.dm3', '.dm4', '.emd']:
+                if len(f.name) > 37 and f.name[36] == '_':
+                    cal_stem = Path(f.name[37:]).stem
+                else:
+                    cal_stem = f.stem
+
+                if cal_stem == original_stem:
+                    calibration_source_path = f
+                    break
+
+    return input_path, calibration_source_path
 
 # Serve Frontend
 app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
@@ -433,42 +466,15 @@ async def delete_image(image_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/process/{image_id}")
-async def process_image_endpoint(image_id: str, manual_pixel_size: float = None, requested_bar_length_nm: float = None, force_reprocess: bool = False):
+async def process_image_endpoint(
+    image_id: str,
+    manual_pixel_size: float = None,
+    requested_bar_length_nm: float = None,
+    force_reprocess: bool = False,
+    binary_mask_tune: int = 0
+):
     try:
-        # Find file with image_id (recursive search for subfolders)
-        files = list(UPLOAD_DIR.rglob(f"{image_id}.*"))
-        if not files:
-            raise HTTPException(status_code=404, detail="Image not found")
-
-        input_path = files[0]
-        search_dir = input_path.parent
-
-        # Try to find a matching calibration file
-        calibration_source_path = None
-
-        # Extract original filename stem (removing UUID prefix if present)
-        current_filename = input_path.name
-        original_stem = None
-
-        if len(current_filename) > 37 and current_filename[36] == '_':
-            original_name_with_ext = current_filename[37:]
-            original_stem = Path(original_name_with_ext).stem
-        else:
-            original_stem = input_path.stem
-
-        # Search for .dm3/.dm4/.emd files in the SAME directory
-        if original_stem:
-            for f in search_dir.glob("*"):
-                if f.suffix.lower() in ['.dm3', '.dm4', '.emd']:
-                    cal_stem = None
-                    if len(f.name) > 37 and f.name[36] == '_':
-                        cal_stem = Path(f.name[37:]).stem
-                    else:
-                        cal_stem = f.stem
-
-                    if cal_stem == original_stem:
-                        calibration_source_path = f
-                        break
+        input_path, calibration_source_path = _find_input_and_calibration_source(image_id)
 
         if not manual_pixel_size and not force_reprocess:
             # Check for existing results to avoid re-processing
@@ -478,14 +484,40 @@ async def process_image_endpoint(image_id: str, manual_pixel_size: float = None,
                 try:
                     with open(results_path, 'r') as f:
                         cached = json.load(f)
-                    if _cached_results_are_current(cached):
+                    if _cached_results_are_current(cached, expected_binary_mask_tune=binary_mask_tune):
                         return cached
                 except Exception:
                     pass # If corrupt, re-process
 
-        result = process_image(input_path, RESULTS_DIR, manual_pixel_size, calibration_source_path)
+        result = process_image(
+            input_path,
+            RESULTS_DIR,
+            manual_pixel_size,
+            calibration_source_path,
+            requested_bar_length_nm,
+            binary_mask_tune
+        )
 
         return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/process/{image_id}/binary_preview")
+async def process_binary_preview_endpoint(
+    image_id: str,
+    manual_pixel_size: float = None,
+    binary_mask_tune: int = 0
+):
+    try:
+        input_path, calibration_source_path = _find_input_and_calibration_source(image_id)
+        return generate_binary_mask_preview(
+            input_path,
+            RESULTS_DIR,
+            manual_pixel_size,
+            calibration_source_path,
+            binary_mask_tune
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

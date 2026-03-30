@@ -9,6 +9,8 @@ cd "$(dirname "$0")"
 PROJECT_DIR="$(pwd)"
 BACKEND_DIR="$PROJECT_DIR/backend"
 VENV_DIR="$BACKEND_DIR/.venv"
+CACHE_DIR="$BACKEND_DIR/.cache"
+MPL_CACHE_DIR="$CACHE_DIR/matplotlib"
 
 # ── Terminal colours ──────────────────────────────────────────────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'; NC='\033[0m'
@@ -125,6 +127,7 @@ fi
 
 PYTHON_VER=$("$PYTHON_CMD" -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}')")
 info "Using Python $PYTHON_VER at: $PYTHON_CMD"
+PYTHON_MINOR=$("$PYTHON_CMD" -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
 
 # =============================================================================
 # STEP 3 — Virtual environment & Python dependencies
@@ -140,6 +143,37 @@ fi
 # Activate
 source "$VENV_DIR/bin/activate"
 info "Virtual environment activated"
+
+# Ensure Python/matplotlib/fontconfig can cache into writable project-local paths.
+mkdir -p "$MPL_CACHE_DIR"
+export XDG_CACHE_HOME="$CACHE_DIR"
+export MPLCONFIGDIR="$MPL_CACHE_DIR"
+
+install_tensorflow_with_fallback() {
+    local tf_wheel_url=""
+
+    info "Installing TensorFlow..."
+    if pip install tensorflow; then
+        return 0
+    fi
+
+    warn "pip could not resolve tensorflow from the package index."
+
+    if [ "$IS_APPLE_SILICON" = true ]; then
+        case "$PYTHON_MINOR" in
+            "3.11")
+                tf_wheel_url="https://files.pythonhosted.org/packages/ec/76/b649b02a243c09f0348199dbd81408c1558cfbec2b6d77d820c428a95254/tensorflow-2.21.0-cp311-cp311-macosx_12_0_arm64.whl"
+                ;;
+        esac
+    fi
+
+    if [ -n "$tf_wheel_url" ]; then
+        warn "Retrying TensorFlow install using the official macOS wheel URL..."
+        pip install "$tf_wheel_url" && return 0
+    fi
+
+    return 1
+}
 
 # Check whether a first-time install is needed
 if ! python -c "import fastapi" &>/dev/null 2>&1; then
@@ -157,8 +191,17 @@ if ! python -c "import fastapi" &>/dev/null 2>&1; then
     #  tensorflow >= 2.16 ships a universal wheel that runs natively on Apple
     #  Silicon (M-series) without a separate macos fork, and is compatible with
     #  numpy 2.x.  tensorflow-metal is still the GPU-acceleration plugin for M-chips.
-    info "Installing TensorFlow..."
-    pip install tensorflow
+    if ! install_tensorflow_with_fallback; then
+        error "TensorFlow installation failed."
+        error "This is usually a package-index or network issue, not a RodSizer code issue."
+        if [ "$IS_APPLE_SILICON" = true ]; then
+            error "If needed, try this manually inside backend/.venv:"
+            error "  pip install https://files.pythonhosted.org/packages/ec/76/b649b02a243c09f0348199dbd81408c1558cfbec2b6d77d820c428a95254/tensorflow-2.21.0-cp311-cp311-macosx_12_0_arm64.whl"
+        else
+            error "Try rerunning later, or install TensorFlow manually inside backend/.venv."
+        fi
+        echo "Press Enter to close..."; read -r; exit 1
+    fi
 
     # Note: tensorflow-metal is NOT installed because v1.2.0 is incompatible
     # with tensorflow >=2.16 (dlopen fails on _pywrap_tensorflow_internal.so).
@@ -212,12 +255,12 @@ fi
 
 # Start uvicorn (log goes to backend/server.log)
 cd "$BACKEND_DIR"
-uvicorn main:app --host 127.0.0.1 --port 8000 > server.log 2>&1 &
+"$VENV_DIR/bin/uvicorn" main:app --host 127.0.0.1 --port 8000 > server.log 2>&1 &
 SERVER_PID=$!
 
-# Wait until the server responds (max 30 s)
+# Wait until the server responds (allow extra time on first run while caches build)
 echo -n "  Waiting for server to be ready"
-MAX_WAIT=30
+MAX_WAIT=90
 for ((i=1; i<=MAX_WAIT; i++)); do
     if curl -s http://127.0.0.1:8000 &>/dev/null; then
         break

@@ -116,9 +116,134 @@ def generate_preview(image_path: Path, output_dir: Path):
     return False
 
 
+def _save_binary_image(output_dir: Path, image_id: str, binary: np.ndarray, suffix: str):
+    filename = f"{image_id}_{suffix}.png"
+    path = output_dir / filename
+    binary_uint8 = (binary.astype(np.uint8) * 255)
+    cv2.imwrite(str(path), binary_uint8)
+    return filename
 
 
-def process_image(image_path: Path, output_dir: Path, manual_pixel_size: float = None, calibration_source_path: Path = None, requested_bar_length_nm: float = None):
+def generate_binary_mask_preview(
+    image_path: Path,
+    output_dir: Path,
+    manual_pixel_size: float = None,
+    calibration_source_path: Path = None,
+    binary_mask_tune: int = 0
+):
+    image_id = image_path.stem
+    ext = image_path.suffix.lower()
+    img = None
+    pixel_size_nm = None
+    calibration_info = {}
+
+    def read_dm3_pixel_size(dm3_path):
+        try:
+            dm = nio.read(str(dm3_path))
+            if 'pixelSize' in dm:
+                return float(dm['pixelSize'][0])
+        except Exception as e:
+            print(f"Error reading Gatan metadata: {e}")
+        return None
+
+    if calibration_source_path and calibration_source_path.exists():
+        cal_ext = calibration_source_path.suffix.lower()
+        if cal_ext == '.emd':
+            pixel_size_nm = read_emd_pixel_size(calibration_source_path)
+        else:
+            pixel_size_nm = read_dm3_pixel_size(calibration_source_path)
+        if pixel_size_nm:
+            calibration_info = {
+                "method": "linked_metadata",
+                "pixel_size_nm": pixel_size_nm,
+                "source_file": calibration_source_path.name,
+                "description": f"Calibration: {calibration_source_path.name}"
+            }
+
+    if ext in ['.dm3', '.dm4']:
+        try:
+            dm = nio.read(str(image_path))
+            raw_data = dm['data']
+            if raw_data.ndim == 3:
+                raw_data = raw_data[0]
+            norm_data = cv2.normalize(raw_data, None, 0, 255, cv2.NORM_MINMAX)
+            img = norm_data.astype(np.uint8)
+            if pixel_size_nm is None and 'pixelSize' in dm:
+                pixel_size_nm = float(dm['pixelSize'][0])
+                calibration_info = {"method": "metadata_dm", "pixel_size_nm": pixel_size_nm}
+        except Exception as e:
+            print(f"Error reading Gatan file: {e}")
+    elif ext == '.emd':
+        img = read_emd_image(image_path)
+        if img is not None and pixel_size_nm is None:
+            emd_ps = read_emd_pixel_size(image_path)
+            if emd_ps:
+                pixel_size_nm = emd_ps
+                calibration_info = {"method": "metadata_emd", "pixel_size_nm": pixel_size_nm}
+
+    if img is None:
+        img = cv2.imread(str(image_path), cv2.IMREAD_GRAYSCALE)
+
+    if img is None:
+        raise ValueError("Could not read image")
+
+    if manual_pixel_size is not None and manual_pixel_size > 0:
+        pixel_size_nm = manual_pixel_size
+        calibration_info = {"method": "manual", "scale_bar_length_nm": "Manual"}
+    elif pixel_size_nm is None:
+        pixel_size_nm, calibration_info = get_pixel_size(image_path)
+
+    if pixel_size_nm is None:
+        pixel_size_nm = 1.0
+        calibration_info = calibration_info or {}
+        calibration_info["method"] = "uncalibrated"
+        calibration_info["is_placeholder"] = True
+        calibration_info.setdefault(
+            "warning",
+            "No calibration found. Measurements are using a placeholder scale until you calibrate manually."
+        )
+    else:
+        calibration_info = calibration_info or {}
+        calibration_info.setdefault("is_placeholder", False)
+
+    binary_mask_tune = int(np.clip(binary_mask_tune, -6, 6))
+    binary = image_kmeans(img, separation_strength=binary_mask_tune)
+
+    if not calibration_info.get("scale_bar_coords"):
+        try:
+            _, temp_calib = get_pixel_size(image_path)
+            if temp_calib.get("scale_bar_coords"):
+                calibration_info["scale_bar_coords"] = temp_calib["scale_bar_coords"]
+        except Exception:
+            pass
+
+    if calibration_info.get("scale_bar_coords"):
+        x1, y1, x2, y2 = calibration_info["scale_bar_coords"]
+        h_img, w_img = binary.shape
+        mask_y1 = max(0, y1 - 120)
+        mask_y2 = min(h_img, y2 + 40)
+        mask_x1 = max(0, x1 - 40)
+        mask_x2 = min(w_img, x2 + 40)
+        binary[mask_y1:mask_y2, mask_x1:mask_x2] = False
+
+    preview_filename = _save_binary_image(output_dir, image_id, binary, "binary_preview")
+
+    return {
+        "binary_preview_url": f"/results/{preview_filename}",
+        "binary_mask_tune": binary_mask_tune,
+        "pixel_size_nm": pixel_size_nm,
+        "calibration_info": calibration_info
+    }
+
+
+def process_image(
+    image_path: Path,
+    output_dir: Path,
+    manual_pixel_size: float = None,
+    calibration_source_path: Path = None,
+    requested_bar_length_nm: float = None,
+    binary_mask_tune: int = 0
+):
     # Default to 200nm if not specified, as per user request to "have blue line as 200 nm"
     if requested_bar_length_nm is None:
         requested_bar_length_nm = 200.0
@@ -213,7 +338,8 @@ def process_image(image_path: Path, output_dir: Path, manual_pixel_size: float =
     
     # Step 1: K-means Segmentation
     # This replaces Adaptive Thresholding
-    binary = image_kmeans(img)
+    binary_mask_tune = int(np.clip(binary_mask_tune, -6, 6))
+    binary = image_kmeans(img, separation_strength=binary_mask_tune)
     
     # MASKING SCALE BAR (Fix for "detecting rods near scale")
     # If we have scale bar coordinates, mask that area out in the binary image
@@ -670,11 +796,7 @@ def process_image(image_path: Path, output_dir: Path, manual_pixel_size: float =
     cv2.imwrite(str(result_image_path), output_image)
     
     # Save Binary Mask for debugging
-    binary_filename = f"{image_id}_binary.png"
-    binary_path = output_dir / binary_filename
-    # Convert boolean binary to uint8 (0 or 255)
-    binary_uint8 = (binary.astype(np.uint8) * 255)
-    cv2.imwrite(str(binary_path), binary_uint8)
+    binary_filename = _save_binary_image(output_dir, image_id, binary, "binary")
     
     # Save Segmentation Overlay (Color-coded masks)
     # Use label2rgb to create a visualization like the paper
@@ -750,6 +872,7 @@ def process_image(image_path: Path, output_dir: Path, manual_pixel_size: float =
 
     output_data = {
         "results_schema_version": 2,
+        "binary_mask_tune": binary_mask_tune,
         "filename": clean_name,
         "data": sanitized_results,
         "image_url": f"/results/{result_image_filename}",

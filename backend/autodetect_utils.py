@@ -5,7 +5,7 @@ import cv2
 from skimage import io, color, util, morphology, measure, filters, exposure, segmentation
 from scipy import ndimage as ndi
 
-def image_kmeans(image, k=2):
+def image_kmeans(image, k=2, separation_strength=0):
     """
     Segments the image using K-means clustering.
     Matches MATLAB 'imagekmeans.m' and 'loadEMimages.m' logic.
@@ -53,14 +53,23 @@ def image_kmeans(image, k=2):
     # We can use rank filter or just skip if subtle. 
     # Let's Skip majority to avoid rounding corners too much.
     
+    # Allow a user-controlled separation/merge bias.
+    # Positive values favor splitting lightly connected regions.
+    # Negative values favor keeping nearby regions connected.
+    # Use a nonlinear radius map so upper slider values feel meaningfully stronger.
+    separation_strength = int(np.clip(separation_strength, -6, 6))
+    radius_by_strength = [1, 3, 6, 9, 13, 17, 22]
+    closing_radius = radius_by_strength[max(0, -separation_strength)]
+    opening_radius = radius_by_strength[max(0, separation_strength)]
+
     # BW_fill_filter = bwmorph(BW_fill_filter,'close');
-    binary = morphology.binary_closing(binary, morphology.disk(1))
+    binary = morphology.binary_closing(binary, morphology.disk(closing_radius))
     
     # BW_fill_filter = bwmorph(BW_fill_filter,'bridge'); 
     # Bridge unconnected pixels. Closing roughly does this.
     
     # BW_fill_filter = bwmorph(BW_fill_filter,'open');
-    binary = morphology.binary_opening(binary, morphology.disk(1))
+    binary = morphology.binary_opening(binary, morphology.disk(opening_radius))
     
     # BW_fill_filter = imfill(BW_fill_filter,4,'holes');
     binary = ndi.binary_fill_holes(binary)
@@ -156,16 +165,16 @@ def ruecs(img_input, area_threshold=25, cnt=0):
         # Original: (1 - Area/ConvexArea > 0.1) -> Solidity < 0.9
         
         is_convex = True
-        if s.convex_area == 0:
+        if s.area_convex == 0:
             convexity_defect = 0
         else:
-            convexity_defect = 1.0 - (s.area / s.convex_area)
+            convexity_defect = 1.0 - (s.area / s.area_convex)
         
         # Perimeter ratio check (approx)
         # Using convex_image perimeter
         ch_perimeter = 0
-        if s.convex_image.ndim == 2:
-             ch_perimeter = measure.perimeter(s.convex_image)
+        if s.image_convex.ndim == 2:
+             ch_perimeter = measure.perimeter(s.image_convex)
         
         perimeter_ratio = 0
         if s.perimeter > 0:
@@ -181,8 +190,8 @@ def ruecs(img_input, area_threshold=25, cnt=0):
             else:
                 se = se2
                 
-            eroded = morphology.binary_erosion(image, se)
-            opened = morphology.binary_opening(eroded, se1)
+            eroded = morphology.erosion(image, se)
+            opened = morphology.opening(eroded, se1)
             
             if not np.any(opened):
                 current_particle['keep'] = False
