@@ -11,8 +11,8 @@ It automatically:
 - Generates batch statistics, histograms, and professional Excel/PDF reports.
 
 # Instruction for Launching
-1. Click "<code>" in Github page.
-2. Click "Download ZIP".
+1. Click on "<>code" in Github page.
+2. Click on "Download ZIP".
 3. Open Finder (MacOS) or Files (Windows).
 4. Click on the RodSizer.zip to unzip.
 5. Double-click on RodSizer_Launcher_MacOS.command or RodSizer_Launcher_Windows.bat.
