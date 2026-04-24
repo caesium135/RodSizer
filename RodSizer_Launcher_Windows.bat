@@ -133,7 +133,7 @@ if errorlevel 1 (
 :CHECK_ENV
 echo.
 echo [INFO] Checking Python environment...
-"%VENV_PYTHON%" -c "import cv2, numpy, fastapi, uvicorn, pandas, openpyxl, multipart, tifffile, h5py, skimage, scipy; import ncempy.io; from stardist.models import StarDist2D; from csbdeep.utils import normalize" >nul 2>&1
+"%VENV_PYTHON%" -c "import cv2, numpy, fastapi, uvicorn, pandas, openpyxl, multipart, tifffile, h5py, skimage, scipy; import ncempy.io" >nul 2>&1
 if errorlevel 1 (
     echo.
     echo [CRITICAL ERROR] The RodSizer environment is incomplete or damaged.

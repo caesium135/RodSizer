@@ -764,37 +764,58 @@
                     const card = document.createElement('div');
                     card.className = 'image-card';
 
-                    // Paths
-                    let imgSrc = `/results/${img.id}_preview.jpg`;
-                    let onClick = `window.location.href = '/analysis?id=${img.id}&folder=${encodeURIComponent(currentFolder)}'`;
+                    // Image container
+                    const imgWrap = document.createElement('div');
+                    imgWrap.style.position = 'relative';
+                    imgWrap.style.height = '200px';
+                    imgWrap.style.overflow = 'hidden';
+
+                    const imgEl = document.createElement('img');
+                    imgEl.alt = name;
+                    if (isProcessing) {
+                        imgEl.src = '/static/assets/loading_screen.png';
+                        imgEl.style.cursor = 'default';
+                    } else {
+                        imgEl.src = `/results/${encodeURIComponent(img.id)}_preview.jpg`;
+                        imgEl.style.cursor = 'pointer';
+                        imgEl.addEventListener('click', () => {
+                            const params = new URLSearchParams({ id: img.id, folder: currentFolder });
+                            window.location.href = `/analysis?${params.toString()}`;
+                        });
+                        imgEl.addEventListener('error', () => {
+                            imgEl.onerror = null;
+                            imgEl.src = `/results/${encodeURIComponent(img.id)}_overlay.jpg`;
+                        }, { once: true });
+                    }
+                    imgWrap.appendChild(imgEl);
 
                     if (isProcessing) {
-                        onClick = null;
-                        imgSrc = '/static/assets/loading_screen.png'; // Or fallback
+                        const overlay = document.createElement('div');
+                        overlay.className = 'processing-overlay';
+                        overlay.addEventListener('click', (ev) => ev.stopPropagation());
+                        const spinner = document.createElement('div');
+                        spinner.className = 'spinner';
+                        const label = document.createElement('span');
+                        label.textContent = 'Processing...';
+                        overlay.appendChild(spinner);
+                        overlay.appendChild(label);
+                        imgWrap.appendChild(overlay);
                     }
 
-                    // Prepare HTML
-                    const processingOverlay = isProcessing ? `
-                        <div class="processing-overlay" onclick="event.stopPropagation()">
-                            <div class="spinner"></div>
-                            <span>Processing...</span>
-                        </div>
-                    ` : '';
+                    const delBtn = document.createElement('button');
+                    delBtn.className = 'delete-btn';
+                    delBtn.textContent = '×';
+                    delBtn.addEventListener('click', (ev) => deleteImage(img.id, ev));
+                    imgWrap.appendChild(delBtn);
 
-                    const errorFallback = `this.onerror=null; this.src='/results/${img.id}_overlay.jpg';`;
-                    const cursorStyle = onClick ? 'cursor: pointer;' : 'cursor: default;';
+                    const info = document.createElement('div');
+                    info.className = 'image-info';
+                    const strong = document.createElement('strong');
+                    strong.textContent = name;
+                    info.appendChild(strong);
 
-                    card.innerHTML = `
-                        <div style="position: relative; height: 200px; overflow: hidden;">
-                            <img src="${imgSrc}" alt="${name}" style="${cursorStyle}" onerror="${errorFallback}"
-                                 ${onClick ? `onclick="${onClick}"` : ''}>
-                            ${processingOverlay}
-                            <button class="delete-btn" onclick="deleteImage('${img.id}', event)">×</button>
-                        </div>
-                        <div class="image-info">
-                            <strong>${name}</strong>
-                        </div>
-                    `;
+                    card.appendChild(imgWrap);
+                    card.appendChild(info);
                     gallery.appendChild(card);
                 });
 

@@ -350,13 +350,18 @@
                 tbody.innerHTML = '';
                 items.forEach(item => {
                     const tr = document.createElement('tr');
-                    tr.innerHTML = `
-                    <td>${item.source_image}</td>
-                    <td>${item.id}</td>
-                    <td>${item.length_nm.toFixed(1)}</td>
-                    <td>${item.width_nm.toFixed(1)}</td>
-                    <td>${item.aspect_ratio.toFixed(1)}</td>
-                `;
+                    const cells = [
+                        String(item.source_image ?? ''),
+                        String(item.id ?? ''),
+                        Number(item.length_nm).toFixed(1),
+                        Number(item.width_nm).toFixed(1),
+                        Number(item.aspect_ratio).toFixed(1),
+                    ];
+                    cells.forEach(val => {
+                        const td = document.createElement('td');
+                        td.textContent = val;
+                        tr.appendChild(td);
+                    });
                     tbody.appendChild(tr);
                 });
             }

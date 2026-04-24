@@ -756,16 +756,29 @@
             if (currentData.length > 0) {
                 currentData.forEach((rod, index) => {
                     const isExcluded = excludedIds.includes(rod.id);
-                    const checkedState = isExcluded ? '' : 'checked';
 
                     const tr = document.createElement('tr');
-                    tr.innerHTML = `
-                        <td><input type="checkbox" class="rod-checkbox" data-index="${index}" ${checkedState}></td>
-                        <td>${rod.id}</td>
-                        <td>${rod.length_nm.toFixed(1)}</td>
-                        <td>${rod.width_nm.toFixed(1)}</td>
-                        <td>${rod.aspect_ratio.toFixed(1)}</td>
-                    `;
+
+                    const cbTd = document.createElement('td');
+                    const cb = document.createElement('input');
+                    cb.type = 'checkbox';
+                    cb.className = 'rod-checkbox';
+                    cb.dataset.index = String(index);
+                    cb.checked = !isExcluded;
+                    cbTd.appendChild(cb);
+                    tr.appendChild(cbTd);
+
+                    [
+                        String(rod.id ?? ''),
+                        Number(rod.length_nm).toFixed(1),
+                        Number(rod.width_nm).toFixed(1),
+                        Number(rod.aspect_ratio).toFixed(1),
+                    ].forEach(val => {
+                        const td = document.createElement('td');
+                        td.textContent = val;
+                        tr.appendChild(td);
+                    });
+
                     tbody.appendChild(tr);
                 });
             }

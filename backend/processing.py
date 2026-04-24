@@ -1,12 +1,8 @@
-from stardist.models import StarDist2D
-from csbdeep.utils import normalize
 from pathlib import Path
 import cv2
 import numpy as np
-from skimage import measure, morphology, segmentation, feature, color
-from skimage.filters import threshold_otsu, threshold_local
+from skimage import measure, segmentation, color
 from utils import get_pixel_size, read_emd_image, read_emd_pixel_size
-import matplotlib.pyplot as plt
 import pandas as pd
 import math
 from scipy import ndimage as ndi
@@ -384,12 +380,7 @@ def process_image(
         if region.area < min_size_px:
             continue
             
-        # Check Solidity (Convexity)
-        # MATLAB: Solidity > 0.9 is "Simple"
-        # Lowered to 0.85 to force more "almost convex" clumps (like 2 touching rods) to be split by rUECS
-        # Decide if object is simple enough to just be one rod
-        # Decide if object is simple enough to just be one rod
-        # Threshold 0.9 (Paper Default)
+        # Solidity > 0.9 is treated as a single rod ("simple"); lower values go to rUECS splitting.
         if region.solidity > 0.9:
             # Simple object, keep as is
             # Create a full-size mask for this object

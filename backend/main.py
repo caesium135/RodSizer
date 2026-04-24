@@ -1,16 +1,15 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException, Form, Query, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from functools import lru_cache
+import importlib
 import shutil
 import os
 import uuid
-import glob
 import re
 from pathlib import Path
 from typing import List
-from processing import process_image, generate_preview, save_results_to_excel, generate_binary_mask_preview
-from typing import Optional
 from pydantic import BaseModel
 import json
 
@@ -21,10 +20,15 @@ class ExportRequest(BaseModel):
 app = FastAPI(title="RodSizer")
 
 
-# Configure CORS
+# Configure CORS — the app is a localhost tool, so restrict to loopback origins.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://127.0.0.1:8000",
+        "http://localhost:8000",
+        "http://127.0.0.1:8501",
+        "http://localhost:8501",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -32,14 +36,31 @@ app.add_middleware(
 
 # Directories
 BASE_DIR = Path(__file__).resolve().parent.parent
-UPLOAD_DIR = BASE_DIR / "uploads"
-RESULTS_DIR = BASE_DIR / "results"
-FRONTEND_DIR = BASE_DIR / "frontend"
+UPLOAD_DIR = (BASE_DIR / "uploads").resolve()
+RESULTS_DIR = (BASE_DIR / "results").resolve()
+FRONTEND_DIR = (BASE_DIR / "frontend").resolve()
 RESULTS_SCHEMA_VERSION = 2
+
+# Upload limits
+MAX_UPLOAD_BYTES = 500 * 1024 * 1024  # 500 MB per file
+MAX_UPLOAD_FILES = 200                # per request
+
+# Image id must be a UUID4 hex string (36 chars with dashes)
+_IMAGE_ID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 
 UPLOAD_DIR.mkdir(exist_ok=True)
 RESULTS_DIR.mkdir(exist_ok=True)
 FRONTEND_DIR.mkdir(exist_ok=True)
+
+
+@lru_cache(maxsize=1)
+def _processing_module():
+    # Delay loading heavy image-analysis dependencies until an endpoint needs them.
+    return importlib.import_module("processing")
+
+
+def _processing_function(name: str):
+    return getattr(_processing_module(), name)
 
 
 def _cached_results_are_current(payload: dict, expected_binary_mask_tune: int = 0) -> bool:
@@ -73,10 +94,50 @@ def _sanitize_folder_name(folder_name: str) -> str:
 
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
     cleaned = cleaned.rstrip(". ")
+
+    # Reject traversal segments and reserved dot-names.
+    if cleaned in ("", ".", ".."):
+        return ""
     return cleaned
 
 
+def _safe_join(base: Path, *parts: str) -> Path:
+    """Join under `base` and ensure the result stays inside `base` after resolving.
+    Raises HTTPException(400) on traversal attempts or empty components."""
+    base_resolved = base.resolve()
+    candidate = base_resolved
+    for raw in parts:
+        if raw is None or raw == "":
+            raise HTTPException(status_code=400, detail="Invalid path component")
+        # Disallow separators and traversal tokens inside a single component.
+        if "/" in raw or "\\" in raw or raw in (".", ".."):
+            raise HTTPException(status_code=400, detail="Invalid path component")
+        candidate = candidate / raw
+
+    resolved = candidate.resolve()
+    try:
+        resolved.relative_to(base_resolved)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Path escapes allowed directory")
+    return resolved
+
+
+def _validate_image_id(image_id: str) -> str:
+    if not image_id or not _IMAGE_ID_RE.match(image_id):
+        raise HTTPException(status_code=400, detail="Invalid image id")
+    return image_id
+
+
+def _resolve_folder(folder_name: str) -> Path:
+    """Validate and resolve a user-supplied folder name to a path inside UPLOAD_DIR."""
+    safe = _sanitize_folder_name(folder_name)
+    if not safe:
+        raise HTTPException(status_code=400, detail="Invalid folder name")
+    return _safe_join(UPLOAD_DIR, safe)
+
+
 def _find_input_and_calibration_source(image_id: str):
+    _validate_image_id(image_id)
     files = list(UPLOAD_DIR.rglob(f"{image_id}.*"))
     if not files:
         raise HTTPException(status_code=404, detail="Image not found")
@@ -126,15 +187,14 @@ async def read_folder_analysis():
 @app.post("/folders")
 async def create_folder(folder_name: str = Form(...)):
     try:
-        # Sanitize folder name (basic)
         safe_name = _sanitize_folder_name(folder_name)
         if not safe_name:
              raise HTTPException(status_code=400, detail="Invalid folder name")
-        
-        folder_path = UPLOAD_DIR / safe_name
+
+        folder_path = _safe_join(UPLOAD_DIR, safe_name)
         if folder_path.exists():
              raise HTTPException(status_code=400, detail="Folder already exists")
-        
+
         folder_path.mkdir(parents=True, exist_ok=True)
         return {"status": "success", "folder": safe_name}
     except HTTPException:
@@ -159,7 +219,7 @@ async def list_folders():
 @app.put("/folders/{folder_name}")
 async def rename_folder(folder_name: str, new_name: str = Form(...)):
     try:
-        source_path = UPLOAD_DIR / folder_name
+        source_path = _resolve_folder(folder_name)
         if not source_path.exists() or not source_path.is_dir():
             raise HTTPException(status_code=404, detail="Folder not found")
 
@@ -170,7 +230,7 @@ async def rename_folder(folder_name: str, new_name: str = Form(...)):
         if safe_name == folder_name:
             return {"status": "success", "folder": safe_name, "renamed": False}
 
-        target_path = UPLOAD_DIR / safe_name
+        target_path = _safe_join(UPLOAD_DIR, safe_name)
         if target_path.exists():
             raise HTTPException(status_code=400, detail="A folder with that name already exists")
 
@@ -184,7 +244,7 @@ async def rename_folder(folder_name: str, new_name: str = Form(...)):
 @app.delete("/folders/{folder_name}")
 async def delete_folder(folder_name: str):
     try:
-        folder_path = UPLOAD_DIR / folder_name
+        folder_path = _resolve_folder(folder_name)
         if not folder_path.exists() or not folder_path.is_dir():
             raise HTTPException(status_code=404, detail="Folder not found")
         
@@ -211,14 +271,15 @@ class FolderSelectionRequest(BaseModel):
 @app.post("/folders/{folder_name}/save_selection")
 async def save_folder_selection(folder_name: str, req: FolderSelectionRequest):
     try:
-        folder_path = UPLOAD_DIR / folder_name
+        _validate_image_id(req.image_id)
+        folder_path = _resolve_folder(folder_name)
         if not folder_path.exists():
             raise HTTPException(status_code=404, detail="Folder not found")
-            
+
         # Analysis cache dir inside the folder (hidden)
         cache_dir = folder_path / ".analysis_cache"
         cache_dir.mkdir(exist_ok=True)
-        
+
         # Load original full results
         json_path = RESULTS_DIR / f"{req.image_id}_results.json"
         if not json_path.exists():
@@ -256,7 +317,7 @@ async def save_folder_selection(folder_name: str, req: FolderSelectionRequest):
 @app.get("/folders/{folder_name}/aggregate")
 async def aggregate_folder(folder_name: str):
     try:
-        folder_path = UPLOAD_DIR / folder_name
+        folder_path = _resolve_folder(folder_name)
         cache_dir = folder_path / ".analysis_cache"
         
         if not cache_dir.exists():
@@ -311,15 +372,16 @@ async def aggregate_folder(folder_name: str):
 @app.get("/folders/{folder_name}/export_aggregate")
 async def export_aggregate_folder(folder_name: str):
     try:
-        folder_path = UPLOAD_DIR / folder_name
+        folder_path = _resolve_folder(folder_name)
+        safe_folder_name = folder_path.name
         cache_dir = folder_path / ".analysis_cache"
-        
+
         if not cache_dir.exists():
             raise HTTPException(status_code=404, detail="No data to export")
-            
+
         combined_data = []
         files = list(cache_dir.glob("*.json"))
-        
+
         for p in files:
             with open(p) as f:
                 payload = json.load(f)
@@ -328,19 +390,19 @@ async def export_aggregate_folder(folder_name: str):
                 for p_data in payload.get("data", []):
                     p_data["source_image"] = fname
                     combined_data.append(p_data)
-        
+
         if not combined_data:
             raise HTTPException(status_code=400, detail="No data found")
 
-        # Generate Temp Excel
-        temp_name = f"export_folder_{folder_name}_{uuid.uuid4().hex[:8]}.xlsx"
+        # Generate Temp Excel (filename is derived from already-sanitized folder name)
+        temp_name = f"export_folder_{safe_folder_name}_{uuid.uuid4().hex[:8]}.xlsx"
         temp_path = RESULTS_DIR / temp_name
         
-        save_results_to_excel(combined_data, temp_path)
+        _processing_function("save_results_to_excel")(combined_data, temp_path)
         
         return FileResponse(
-            path=temp_path, 
-            filename=f"{folder_name}_analysis_report.xlsx",
+            path=temp_path,
+            filename=f"{safe_folder_name}_analysis_report.xlsx",
             media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
         )
 
@@ -354,27 +416,53 @@ async def export_aggregate_folder(folder_name: str):
 async def upload_images(background_tasks: BackgroundTasks, folder: str = Form(None), files: List[UploadFile] = File(...)):
     uploaded_files = []
     try:
+        if len(files) > MAX_UPLOAD_FILES:
+            raise HTTPException(status_code=400, detail=f"Too many files (max {MAX_UPLOAD_FILES} per request)")
+
+        # Resolve target directory once (validates the folder name).
+        if folder:
+            save_dir = _resolve_folder(folder)
+            if not save_dir.exists():
+                raise HTTPException(status_code=400, detail="Folder does not exist")
+        else:
+            save_dir = UPLOAD_DIR
+
         for file in files:
             file_id = str(uuid.uuid4())
-            safe_filename = Path(file.filename).name
+            # Strip any directory components and reject empty/traversal names.
+            raw_name = Path(file.filename or "").name
+            if not raw_name or raw_name in (".", ".."):
+                raise HTTPException(status_code=400, detail="Invalid filename")
+            safe_filename = _sanitize_folder_name(raw_name)
+            if not safe_filename:
+                raise HTTPException(status_code=400, detail="Invalid filename")
             save_name = f"{file_id}_{safe_filename}"
-            
-            # Determine save directory
-            if folder:
-                save_dir = UPLOAD_DIR / folder
-                if not save_dir.exists():
-                    raise HTTPException(status_code=400, detail="Folder does not exist")
-            else:
-                save_dir = UPLOAD_DIR
-                
-            file_path = save_dir / save_name
-            
+
+            file_path = _safe_join(save_dir, save_name)
+
+            # Stream with an explicit size ceiling to avoid unbounded disk use.
+            bytes_written = 0
             with open(file_path, "wb") as buffer:
-                shutil.copyfileobj(file.file, buffer)
+                while True:
+                    chunk = file.file.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    bytes_written += len(chunk)
+                    if bytes_written > MAX_UPLOAD_BYTES:
+                        buffer.close()
+                        try:
+                            file_path.unlink()
+                        except OSError:
+                            pass
+                        raise HTTPException(
+                            status_code=413,
+                            detail=f"File exceeds maximum size of {MAX_UPLOAD_BYTES // (1024 * 1024)} MB",
+                        )
+                    buffer.write(chunk)
             
             # 1. Generate Immediate Preview (Sync)
             # This ensures the user sees something right away
-            generate_preview(file_path, RESULTS_DIR)
+            _processing_function("generate_preview")(file_path, RESULTS_DIR)
             
             uploaded_files.append({
                 "id": file_path.stem, 
@@ -405,7 +493,13 @@ async def upload_images(background_tasks: BackgroundTasks, folder: str = Form(No
                         break
             
             # Add to background tasks
-            background_tasks.add_task(process_image, file_path, RESULTS_DIR, None, calibration_source_path)
+            background_tasks.add_task(
+                _processing_function("process_image"),
+                file_path,
+                RESULTS_DIR,
+                None,
+                calibration_source_path,
+            )
 
         return uploaded_files
     except Exception as e:
@@ -414,12 +508,16 @@ async def upload_images(background_tasks: BackgroundTasks, folder: str = Form(No
 @app.get("/images")
 async def list_images(folder: str = Query(None)):
     images = []
-    
-    target_dir = UPLOAD_DIR
+
     if folder:
-        target_dir = UPLOAD_DIR / folder
+        try:
+            target_dir = _resolve_folder(folder)
+        except HTTPException:
+            return []
         if not target_dir.exists():
-            return [] # Empty if folder doesn't exist
+            return []
+    else:
+        target_dir = UPLOAD_DIR
             
     for path in target_dir.glob("*"):
         if path.is_file() and path.suffix.lower() in ['.tif', '.tiff', '.jpg', '.jpeg', '.png', '.dm3', '.dm4', '.emd']:
@@ -447,21 +545,33 @@ async def list_images(folder: str = Query(None)):
 @app.delete("/images/{image_id}")
 async def delete_image(image_id: str):
     try:
-        # Find file in uploads (recursive search)
+        _validate_image_id(image_id)
+        # Find file in uploads (recursive search). image_id is UUID4 so no glob metachars.
         files = list(UPLOAD_DIR.rglob(f"{image_id}.*"))
         if not files:
             raise HTTPException(status_code=404, detail="Image not found")
-        
-        # Delete source file
+
+        # Delete source file — ensure it's still inside UPLOAD_DIR after resolve.
         for f in files:
-            os.remove(f)
-            
-        # Delete results if they exist
-        # Result files usually start with image_id
+            resolved = f.resolve()
+            try:
+                resolved.relative_to(UPLOAD_DIR)
+            except ValueError:
+                continue
+            os.remove(resolved)
+
+        # Delete results if they exist. Prefix is a validated UUID.
         for res_file in RESULTS_DIR.glob(f"{image_id}*"):
-            os.remove(res_file)
-            
+            resolved = res_file.resolve()
+            try:
+                resolved.relative_to(RESULTS_DIR)
+            except ValueError:
+                continue
+            os.remove(resolved)
+
         return {"status": "success", "message": "Image deleted"}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -489,7 +599,7 @@ async def process_image_endpoint(
                 except Exception:
                     pass # If corrupt, re-process
 
-        result = process_image(
+        result = _processing_function("process_image")(
             input_path,
             RESULTS_DIR,
             manual_pixel_size,
@@ -511,7 +621,7 @@ async def process_binary_preview_endpoint(
 ):
     try:
         input_path, calibration_source_path = _find_input_and_calibration_source(image_id)
-        return generate_binary_mask_preview(
+        return _processing_function("generate_binary_mask_preview")(
             input_path,
             RESULTS_DIR,
             manual_pixel_size,
@@ -523,25 +633,54 @@ async def process_binary_preview_endpoint(
 
 @app.get("/results/{filename}")
 async def get_result_file(filename: str):
-    file_path = RESULTS_DIR / filename
-    if not file_path.exists():
-        # Try looking in uploads for original images if requested via this endpoint
-        # Check root
-        file_path = UPLOAD_DIR / filename
-        if not file_path.exists():
-            # Check recursively in uploads
-            found = list(UPLOAD_DIR.rglob(filename))
-            if found:
-                file_path = found[0]
-            else:
-                raise HTTPException(status_code=404, detail="File not found")
-    return FileResponse(file_path)
+    # Reject path separators, traversal tokens, control chars and glob metacharacters.
+    if (
+        not filename
+        or filename in (".", "..")
+        or "/" in filename
+        or "\\" in filename
+        or "\x00" in filename
+        or any(ord(c) < 32 for c in filename)
+        or any(ch in filename for ch in "*?[]")
+    ):
+        raise HTTPException(status_code=400, detail="Invalid filename")
+
+    # 1. Prefer results dir.
+    results_candidate = (RESULTS_DIR / filename).resolve()
+    try:
+        results_candidate.relative_to(RESULTS_DIR)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    if results_candidate.is_file():
+        return FileResponse(results_candidate)
+
+    # 2. Fall back to uploads (root, then nested — used for original images).
+    uploads_candidate = (UPLOAD_DIR / filename).resolve()
+    try:
+        uploads_candidate.relative_to(UPLOAD_DIR)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    if uploads_candidate.is_file():
+        return FileResponse(uploads_candidate)
+
+    # Recursive lookup by exact basename only — filename already vetted above.
+    for found in UPLOAD_DIR.rglob(filename):
+        resolved = found.resolve()
+        try:
+            resolved.relative_to(UPLOAD_DIR)
+        except ValueError:
+            continue
+        if resolved.is_file() and resolved.name == filename:
+            return FileResponse(resolved)
+
+    raise HTTPException(status_code=404, detail="File not found")
 
 # --- Export ---
 
 @app.post("/export")
 async def export_data(req: ExportRequest):
     try:
+        _validate_image_id(req.image_id)
         # Load cache
         json_path = RESULTS_DIR / f"{req.image_id}_results.json"
         if not json_path.exists():
@@ -566,25 +705,30 @@ async def export_data(req: ExportRequest):
         temp_name = f"export_{req.image_id}_{uuid.uuid4().hex[:8]}.xlsx"
         temp_path = RESULTS_DIR / temp_name
         
-        save_results_to_excel(filtered_results, temp_path)
+        _processing_function("save_results_to_excel")(filtered_results, temp_path)
         
         # We should use BackgroundTasks to clean up, but simpler here:
         # FileResponse can delete after? using background. 
         # But allow it to persist is fine for now (results dir is cache).
         
-        original_filename = data.get("filename", req.image_id)
-        # Ensure it's safe? It was sanitized in processing.py.
-        
+        # Sanitize the suggested download filename — it originates from the
+        # uploaded filename and flows into a response header.
+        raw_name = data.get("filename") or req.image_id
+        safe_download_stem = _sanitize_folder_name(Path(raw_name).stem) or req.image_id
+
         return FileResponse(
-            path=temp_path, 
-            filename=f"{original_filename}_detected.xlsx",
+            path=temp_path,
+            filename=f"{safe_download_stem}_detected.xlsx",
             media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"Export Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    # Bind to loopback only — the app is a local tool and the launchers expect 127.0.0.1.
+    uvicorn.run(app, host="127.0.0.1", port=8000)
