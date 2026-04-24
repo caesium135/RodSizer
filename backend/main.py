@@ -45,8 +45,10 @@ RESULTS_SCHEMA_VERSION = 2
 MAX_UPLOAD_BYTES = 500 * 1024 * 1024  # 500 MB per file
 MAX_UPLOAD_FILES = 200                # per request
 
-# Image id must be a UUID4 hex string (36 chars with dashes)
-_IMAGE_ID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+# Image ids are the stem of uploaded files: "<uuid>" or "<uuid>_<sanitized_name>".
+_IMAGE_ID_RE = re.compile(
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}(?:_.+)?$"
+)
 
 UPLOAD_DIR.mkdir(exist_ok=True)
 RESULTS_DIR.mkdir(exist_ok=True)
@@ -125,6 +127,9 @@ def _safe_join(base: Path, *parts: str) -> Path:
 def _validate_image_id(image_id: str) -> str:
     if not image_id or not _IMAGE_ID_RE.match(image_id):
         raise HTTPException(status_code=400, detail="Invalid image id")
+    for c in image_id:
+        if ord(c) < 32 or c in '/\\*?[]':
+            raise HTTPException(status_code=400, detail="Invalid image id")
     return image_id
 
 
@@ -138,7 +143,7 @@ def _resolve_folder(folder_name: str) -> Path:
 
 def _find_input_and_calibration_source(image_id: str):
     _validate_image_id(image_id)
-    files = list(UPLOAD_DIR.rglob(f"{image_id}.*"))
+    files = [p for p in UPLOAD_DIR.rglob("*") if p.is_file() and p.stem == image_id]
     if not files:
         raise HTTPException(status_code=404, detail="Image not found")
 
@@ -546,12 +551,10 @@ async def list_images(folder: str = Query(None)):
 async def delete_image(image_id: str):
     try:
         _validate_image_id(image_id)
-        # Find file in uploads (recursive search). image_id is UUID4 so no glob metachars.
-        files = list(UPLOAD_DIR.rglob(f"{image_id}.*"))
+        files = [p for p in UPLOAD_DIR.rglob("*") if p.is_file() and p.stem == image_id]
         if not files:
             raise HTTPException(status_code=404, detail="Image not found")
 
-        # Delete source file — ensure it's still inside UPLOAD_DIR after resolve.
         for f in files:
             resolved = f.resolve()
             try:
@@ -560,8 +563,9 @@ async def delete_image(image_id: str):
                 continue
             os.remove(resolved)
 
-        # Delete results if they exist. Prefix is a validated UUID.
-        for res_file in RESULTS_DIR.glob(f"{image_id}*"):
+        for res_file in RESULTS_DIR.iterdir():
+            if not res_file.is_file() or not res_file.name.startswith(image_id):
+                continue
             resolved = res_file.resolve()
             try:
                 resolved.relative_to(RESULTS_DIR)
